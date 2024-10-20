@@ -280,6 +280,7 @@ class LindBladEvolve(torch.nn.Module):
         
         self.fid_err_list = []
         self.energy_list = []
+        self.prop_evo_ref = None
         
         self.fid_err = None
         self.ent_err = None
@@ -326,8 +327,8 @@ class LindBladEvolve(torch.nn.Module):
             self.fwd_evo[k + 1] = self.fwd_evo[k+1]/torch.trace(self.fwd_evo[k+1].view(self.dim, self.dim))
 
     def _compute_prop_ref_evo(self,k):
-        A = self.dyn_gen(k) * self.dt
-        prop = torch.expm(A)
+        A = self.dyn_gen * self.dt
+        prop = torch.matrix_exp(A)
         return prop
     
     def _evo_ref(self):
@@ -336,14 +337,14 @@ class LindBladEvolve(torch.nn.Module):
         self.prop_evo_ref = [0 for _ in range(n_ts)]
 
         for k in range(n_ts):
-            self.prop_evo_ref[k] = self._compute_prop_ref_evo(self, k)
+            self.prop_evo_ref[k] = self._compute_prop_ref_evo(k)
 
     def _trajectory_probability(self, prop):
         n_ts = self.n_ts
         measure_times = self.measurements[1]
         measure_operators = self.measurements[0]
         state = self.initial
-        dims = self.dims
+        dims = self.dim
         device = state.device  # Get the device (CPU/GPU) from the state tensor
         
         measured_values = []
@@ -354,7 +355,9 @@ class LindBladEvolve(torch.nn.Module):
             
             if i in measure_times:
                 # Convert state to operator and get diagonal elements
+                state = state.reshape(self.dim, self.dim)
                 probs = torch.diagonal(state.real, dim1=0, dim2=1)
+                state = state.reshape(self.dim * self.dim)
                 
                 # Normalize probabilities
                 probs = probs / torch.sum(probs)
@@ -367,7 +370,7 @@ class LindBladEvolve(torch.nn.Module):
                 state = torch.matmul(torch.from_numpy(measure_operators[measurement]), state)
         
         # Calculate final probability
-        probability = torch.trace(state).real
+        probability = torch.trace(state.reshape(self.dim, self.dim)).real
         
         return probability, measured_values
 
@@ -390,14 +393,19 @@ class LindBladEvolve(torch.nn.Module):
 
     def _probability_distribution(self, prop):
         total_sum = 0
+        #i = 0 
         probability_distribution = [None for _ in range(2**len(self.measurements[1]))]
         while total_sum < 0.95:
-            probability, measured_value = self._trajectory_probability(self,prop)
+            #i+=1
+            probability, measured_value = self._trajectory_probability(prop)
             # raise TypeError(print(probability, str(measured_value), self._binary_array_to_integer(measured_value)))
             index = self._binary_array_to_integer(measured_value)
             if probability_distribution[index] == None:
                 probability_distribution[index] = probability
                 total_sum += probability
+            
+            #if i >= 100:
+                #raise TypeError(total_sum)
         return probability_distribution
 
     # Compute KL
@@ -434,12 +442,12 @@ class LindBladEvolve(torch.nn.Module):
         n_ts = self.n_ts
 
         if not self.prop_evo_ref:
-            self._evo_ref(self)
+            self._evo_ref()
 
-        p1 = self._probability_distribution(self, self.prop)
-        p2 = self._probability_distribution(self, self.prop_evo_ref)
+        p1 = self._probability_distribution(self.prop)
+        p2 = self._probability_distribution(self.prop_evo_ref)
 
-        return self._get_kl_divergence(self, p1, p2)
+        return self._get_kl_divergence(p1, p2)
 
     def _get_fid(self):
         evo_final = self.fwd_evo[-1]
@@ -502,7 +510,7 @@ class LindBladEvolve(torch.nn.Module):
         cont_error = (torch.linalg.vector_norm(pairwise_diffs_real) 
                       + torch.linalg.vector_norm(pairwise_diffs_im))
         
-        return lam * fid_error * 3000 + ent_error + lam2 * 100 * (energy + 5) ** 2 + 100 * (reg_error + 10*cont_error)
+        return 0*lam * fid_error * 3000 - 10 * ent_error + 0*lam2 * 10 * (energy + 5) ** 2 + 0*10 * (reg_error + 10*cont_error)
 
     def optimize(self, n_iters, learning_rate, constraint, fidelity_target):
         lam = [100.0]
