@@ -17,7 +17,7 @@ H_sys = a.dag()*a
 H_con = [[liouvillian(a), liouvillian(a.dag())]]
 Ham_list = [[0.5 * H_sys.full(), 0.5 * H_sys.full()], [a.full(), a.dag().full()]]
 
-n_ts = 40
+n_ts = 8
 evo_time = 1
 
 times = np.linspace(0,evo_time,n_ts)
@@ -29,7 +29,7 @@ L0 = liouvillian(H_sys, c_ops=[c1*a, c2*a*a.dag()])
 rho0 = operator_to_vector(Qobj([[0.8,0],[0,0.2]]))
 newr = vector_to_operator(rho0)
 rhotar = operator_to_vector(Qobj([[0.1,0],[0,0.9]]))
-measurements = [[to_super(Qobj([[1, 0],[0, 0]])).full(), to_super(Qobj([[0,0],[0,1]])).full()] ,[3, 9, 13]]
+measurements = [[to_super(Qobj([[1, 0],[0, 0]])).full(), to_super(Qobj([[0,0],[0,1]])).full()] ,[1, 2, 7]]
 
 othertimes = np.linspace(0, evo_time, n_ts)
 othertimes = othertimes.tolist()
@@ -47,8 +47,8 @@ plt.plot(othertimes, onelist, color='blue',  linestyle='dashed', markersize=3)
 
 time_list = np.linspace(0, evo_time, n_ts)[:-1]
 
-ctrls = torch.load('databigrun.pth')['ctrls']
-#ctrls = None
+# ctrls = torch.load('databigrun.pth')['ctrls']
+ctrls = None
 evolution = create_evolution(L0, H_con, Ham_list, rho0, rhotar, ref_evo, time_list, glob_dim, ctrls, measurements)
 ctrls = evolution.optimize(10000, 0.0000005, 0, 0)
 

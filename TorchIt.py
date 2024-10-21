@@ -356,6 +356,7 @@ class LindBladEvolve(torch.nn.Module):
             if i in measure_times:
                 # Convert state to operator and get diagonal elements
                 state = state.reshape(self.dim, self.dim)
+                # raise TypeError(state)
                 probs = torch.diagonal(state.real, dim1=0, dim2=1)
                 state = state.reshape(self.dim * self.dim)
                 
@@ -374,7 +375,114 @@ class LindBladEvolve(torch.nn.Module):
         
         return probability, measured_values
 
+    def _path_prob_given_trajectory(self,prop):
+        n_ts = self.n_ts
+        measure_times = self.measurements[1]
+        measure_operators = self.measurements[0]
+        state = self.initial
+        dims = self.dim
+        # raise TypeError(measure_times)
 
+        probability_distribution = torch.from_numpy(np.array([0 for _ in range(2**3)]))
+        for i in range(0,2):
+            for j in range(0,2):
+                for k in range(0,2):
+                    for m in range(n_ts):
+                        state = torch.matmul(prop[i], state)
+                        if m == 1:
+                            state = state.reshape(self.dim, self.dim)
+                            prob_i = torch.diagonal(state.real, dim1=0, dim2=1)[i]
+                            state = state.reshape(self.dim * self.dim)
+                            state = torch.matmul(torch.from_numpy(measure_operators[i]), state)
+                        if m == 2:
+                            state = state.reshape(self.dim, self.dim)
+                            prob_j = torch.diagonal(state.real, dim1=0, dim2=1)[j]
+                            state = state.reshape(self.dim * self.dim)
+                            state = torch.matmul(torch.from_numpy(measure_operators[j]), state)
+                        if m == 3:
+                            state = state.reshape(self.dim, self.dim)
+                            prob_k = torch.diagonal(state.real, dim1=0, dim2=1)[k]
+                            state = state.reshape(self.dim * self.dim)
+                            state = torch.matmul(torch.from_numpy(measure_operators[k]), state)
+                    probability = prob_i*prob_j*prob_k*torch.trace(state.reshape(self.dim, self.dim)).real
+                    print(probability)
+                    probability_distribution[self._binary_array_to_integer(np.array([i,j,k]))] = probability
+                    raise TypeError(probability_distribution)
+        total_sum = 0
+        for i in range(len(probability_distribution)):
+            total_sum += probability_distribution[i].item()
+        print(total_sum)
+        probability_distribution = probability_distribution/total_sum
+        raise TypeError(probability_distribution)
+        return probability_distribution
+
+    def _path_prob_given_trajectory_claude(self, prop):
+        """
+        Calculate probability distribution for quantum measurements across multiple time steps.
+        
+        Args:
+            prop: Propagator operators
+            
+        Returns:
+            torch.Tensor: Normalized probability distribution
+        """
+        n_ts = self.n_ts
+        measure_times = self.measurements[1]
+        measure_operators = self.measurements[0]
+        dims = self.dim
+        
+        # Initialize probability distribution for all possible measurement outcomes
+        probability_distribution = torch.zeros(2**3)
+        
+        # Iterate through all possible measurement combinations
+        for i in range(2):
+            for j in range(2):
+                for k in range(2):
+                    # Start with initial state for each trajectory
+                    state = self.initial.clone()
+                    
+                    # Initialize individual measurement probabilities
+                    prob_i = prob_j = prob_k = 1.0
+                    
+                    # Evolve state through time steps
+                    for m in range(n_ts):
+                        state = torch.matmul(prop[i], state)
+                        
+                        # Reshape state and apply measurements at appropriate times
+                        if m == 1:
+                            state_matrix = state.reshape(dims, dims)
+                            prob_i = torch.diagonal(state_matrix.real, dim1=0, dim2=1)[i]
+                            state = state.reshape(dims * dims)
+                            state = torch.matmul(torch.from_numpy(measure_operators[i]), state)
+                        
+                        elif m == 2:
+                            state_matrix = state.reshape(dims, dims)
+                            prob_j = torch.diagonal(state_matrix.real, dim1=0, dim2=1)[j]
+                            state = state.reshape(dims * dims)
+                            state = torch.matmul(torch.from_numpy(measure_operators[j]), state)
+                        
+                        elif m == 3:
+                            state_matrix = state.reshape(dims, dims)
+                            prob_k = torch.diagonal(state_matrix.real, dim1=0, dim2=1)[k]
+                            state = state.reshape(dims * dims)
+                            state = torch.matmul(torch.from_numpy(measure_operators[k]), state)
+                    
+                    # Calculate final probability for this trajectory
+                    final_state_matrix = state.reshape(dims, dims)
+                    trajectory_prob = prob_i * prob_j * prob_k * torch.trace(final_state_matrix).real
+                    
+                    # Store probability in distribution
+                    idx = self._binary_array_to_integer(torch.tensor([i, j, k]))
+                    probability_distribution[idx] = trajectory_prob
+        
+        # Normalize probability distribution
+        total_prob = probability_distribution.sum()
+        if total_prob > 0:
+            probability_distribution = probability_distribution / total_prob
+        
+        return probability_distribution
+        
+        
     def _binary_array_to_integer(self,binary_array):
     # Convert to numpy array if it's a list
         if isinstance(binary_array, list):
@@ -395,7 +503,8 @@ class LindBladEvolve(torch.nn.Module):
         total_sum = 0
         #i = 0 
         probability_distribution = [None for _ in range(2**len(self.measurements[1]))]
-        while total_sum < 0.95:
+        done = []
+        while total_sum < 0.99:
             #i+=1
             probability, measured_value = self._trajectory_probability(prop)
             # raise TypeError(print(probability, str(measured_value), self._binary_array_to_integer(measured_value)))
@@ -403,8 +512,17 @@ class LindBladEvolve(torch.nn.Module):
             if probability_distribution[index] == None:
                 probability_distribution[index] = probability
                 total_sum += probability
-            
-            #if i >= 100:
+                done.append(index)
+        for i in range(len(probability_distribution)):
+            if i not in done:
+                probability_distribution[i] = (1 - total_sum)/(len(probability_distribution)-len(done))
+                if (torch.round(1 - total_sum,4))/(len(probability_distribution)-len(done)) < 0:
+                    print(total_sum)
+                    print(len(probability_distribution))
+                    print(len(done))
+                    raise TypeError((1 - total_sum)/(len(probability_distribution)-len(done)))
+
+                #if i >= 100:
                 #raise TypeError(total_sum)
         return probability_distribution
 
@@ -433,6 +551,7 @@ class LindBladEvolve(torch.nn.Module):
 
     def _get_error(self):
         ent_error = self._get_ent_err()
+        # raise TypeError(ent_error)
         fid_error = self._get_fid()
         return [ent_error, fid_error]
 
@@ -444,9 +563,11 @@ class LindBladEvolve(torch.nn.Module):
         if not self.prop_evo_ref:
             self._evo_ref()
 
-        p1 = self._probability_distribution(self.prop)
-        p2 = self._probability_distribution(self.prop_evo_ref)
-
+        p1 = self._path_prob_given_trajectory_claude(self.prop)
+        p2 = self._path_prob_given_trajectory_claude(self.prop_evo_ref)
+        value = self._get_kl_divergence(p1,p2)
+        if value < 0:
+            raise TypeError(value, p1, p2)
         return self._get_kl_divergence(p1, p2)
 
     def _get_fid(self):
@@ -495,6 +616,10 @@ class LindBladEvolve(torch.nn.Module):
         ent_error = self._get_ent_err()
         self.fid_err = fid_error
         self.ent_err = ent_error
+
+        if ent_error < 0:
+            raise TypeError('ent_error is negative' + str( print(ent_error)))
+
         
         #jumps = self._get_jump()
         #self.jump = jumps
@@ -510,7 +635,7 @@ class LindBladEvolve(torch.nn.Module):
         cont_error = (torch.linalg.vector_norm(pairwise_diffs_real) 
                       + torch.linalg.vector_norm(pairwise_diffs_im))
         
-        return 0*lam * fid_error * 3000 - 10 * ent_error + 0*lam2 * 10 * (energy + 5) ** 2 + 0*10 * (reg_error + 10*cont_error)
+        return lam * fid_error * 3000 + 10 * ent_error + lam2 * 10 * (energy + 5) ** 2 + 10 * (reg_error + 10*cont_error)
 
     def optimize(self, n_iters, learning_rate, constraint, fidelity_target):
         lam = [100.0]
