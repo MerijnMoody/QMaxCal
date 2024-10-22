@@ -451,22 +451,22 @@ class LindBladEvolve(torch.nn.Module):
                     
                     # Evolve state through time steps
                     for m in range(n_ts):
-                        state = torch.matmul(prop[i], state)
+                        state = torch.matmul(prop[m], state)
                         
                         # Reshape state and apply measurements at appropriate times
-                        if m == 1:
+                        if m == 14:
                             state_matrix = state.reshape(dims, dims)
                             prob_i = torch.diagonal(state_matrix.real, dim1=0, dim2=1)[i]
                             state = state.reshape(dims * dims)
                             state = torch.matmul(torch.from_numpy(measure_operators[i]), state)
                         
-                        elif m == 2:
+                        elif m == 30:
                             state_matrix = state.reshape(dims, dims)
                             prob_j = torch.diagonal(state_matrix.real, dim1=0, dim2=1)[j]
                             state = state.reshape(dims * dims)
                             state = torch.matmul(torch.from_numpy(measure_operators[j]), state)
                         
-                        elif m == 3:
+                        elif m == 44:
                             state_matrix = state.reshape(dims, dims)
                             prob_k = torch.diagonal(state_matrix.real, dim1=0, dim2=1)[k]
                             state = state.reshape(dims * dims)
@@ -485,8 +485,7 @@ class LindBladEvolve(torch.nn.Module):
         if total_prob > 0:
             probability_distribution = probability_distribution / total_prob
         
-        return probability_distribution
-        
+        return probability_distribution   
         
     def _binary_array_to_integer(self,binary_array):
     # Convert to numpy array if it's a list
@@ -504,31 +503,34 @@ class LindBladEvolve(torch.nn.Module):
     
         return integer_value
 
-    def _probability_distribution(self, prop):
+    def _probability_distribution_estimate(self, prop, eps, iters):
+        i = 0
         total_sum = 0
-        #i = 0 
-        probability_distribution = [None for _ in range(2**len(self.measurements[1]))]
+        probability_distribution = torch.zeros(2**len(self.measurements[1]))
         done = []
-        while total_sum < 0.99:
-            #i+=1
+        while total_sum < 0.95 and i < iters:
+            i+=1
             probability, measured_value = self._trajectory_probability(prop)
-            # raise TypeError(print(probability, str(measured_value), self._binary_array_to_integer(measured_value)))
             index = self._binary_array_to_integer(measured_value)
-            if probability_distribution[index] == None:
+            if index not in done:
                 probability_distribution[index] = probability
                 total_sum += probability
                 done.append(index)
+                
         for i in range(len(probability_distribution)):
             if i not in done:
-                probability_distribution[i] = (1 - total_sum)/(len(probability_distribution)-len(done))
-                if (torch.round(1 - total_sum,4))/(len(probability_distribution)-len(done)) < 0:
-                    print(total_sum)
-                    print(len(probability_distribution))
-                    print(len(done))
-                    raise TypeError((1 - total_sum)/(len(probability_distribution)-len(done)))
+                probability_distribution[i] = eps
+                #probability_distribution[i] = (1 - total_sum)/(len(probability_distribution)-len(done))
+                #if (torch.round(1 - total_sum,4))/(len(probability_distribution)-len(done)) < 0:
+                #    raise TypeError((1 - total_sum)/(len(probability_distribution)-len(done)))
 
                 #if i >= 100:
                 #raise TypeError(total_sum)
+        
+        total_prob = probability_distribution.sum()
+        if total_prob > 0:
+            probability_distribution = probability_distribution / total_prob
+            
         return probability_distribution
 
     # Compute KL
@@ -567,9 +569,11 @@ class LindBladEvolve(torch.nn.Module):
 
         if not self.prop_evo_ref:
             self._evo_ref()
-
+        
+        #p1 = self._probability_distribution_estimate(self.prop,1e-8,500)
         p1 = self._path_prob_given_trajectory_claude(self.prop)
         self.PathDistEvo = p1
+        #p2 = self._probability_distribution_estimate(self.prop_evo_ref,1e-8,500)
         p2 = self._path_prob_given_trajectory_claude(self.prop_evo_ref)
         value = self._get_kl_divergence(p1,p2)
         self.PathDistref = p2
@@ -643,14 +647,15 @@ class LindBladEvolve(torch.nn.Module):
         cont_error = (torch.linalg.vector_norm(pairwise_diffs_real) 
                       + torch.linalg.vector_norm(pairwise_diffs_im))
         
-        return lam * fid_error * 4000*0 + 1000000 * ent_error + lam2 * 10 * (energy + 5) ** 2*0 + 10 * (reg_error + 10*cont_error)*0
+        return lam * fid_error * 5 + ent_error * 100 + lam2 * (energy + 5) ** 2 + 10 * (reg_error + 10*cont_error) * 0
 
     def optimize(self, n_iters, learning_rate, constraint, fidelity_target):
-        lam = [100.0]
-        lam2 = [50.0]
+        lam = [1.000]
+        lam2 = [1.000]
         
-        ctrls_real = torch.mul(torch.rand((self.n_ts, self.n_ctrls)), 5)
-        ctrls_im = torch.mul(torch.rand((self.n_ts, self.n_ctrls)), 5)
+        ctrls_real = torch.mul(torch.rand((self.n_ts, self.n_ctrls)), 0.5)
+        ctrls_im = torch.mul(torch.rand((self.n_ts, self.n_ctrls)), 0.5)
+    
         
         if self.init_ctrls:
             lam = self.init_ctrls[-1]
@@ -671,7 +676,7 @@ class LindBladEvolve(torch.nn.Module):
             loss.backward()
             optimizer.step()
             
-            if (i+1) % 100 == 0 or i == 0:
+            if (i+1) % 1000 == 0 or i == 0:
                 self.fid_grad.append(ctrls_real.grad)
                 self.fid_grad.append(ctrls_im.grad)
                 self.ctrls_list.append(self.ctrls_real.detach())
