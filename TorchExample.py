@@ -17,7 +17,7 @@ H_sys = a.dag()*a
 H_con = [[liouvillian(a), liouvillian(a.dag())]]
 Ham_list = [[0.5 * H_sys.full(), 0.5 * H_sys.full()], [a.full(), a.dag().full()]]
 
-n_ts = 8
+n_ts = 45
 evo_time = 1
 
 times = np.linspace(0,evo_time,n_ts)
@@ -29,7 +29,7 @@ L0 = liouvillian(H_sys, c_ops=[c1*a, c2*a*a.dag()])
 rho0 = operator_to_vector(Qobj([[0.8,0],[0,0.2]]))
 newr = vector_to_operator(rho0)
 rhotar = operator_to_vector(Qobj([[0.1,0],[0,0.9]]))
-measurements = [[to_super(Qobj([[1, 0],[0, 0]])).full(), to_super(Qobj([[0,0],[0,1]])).full()] ,[1, 2, 7]]
+measurements = [[to_super(Qobj([[1, 0],[0, 0]])).full(), to_super(Qobj([[0,0],[0,1]])).full()] ,[1, 2, 3]]
 
 othertimes = np.linspace(0, evo_time, n_ts)
 othertimes = othertimes.tolist()
@@ -50,7 +50,7 @@ time_list = np.linspace(0, evo_time, n_ts)[:-1]
 # ctrls = torch.load('databigrun.pth')['ctrls']
 ctrls = None
 evolution = create_evolution(L0, H_con, Ham_list, rho0, rhotar, ref_evo, time_list, glob_dim, ctrls, measurements)
-ctrls = evolution.optimize(10000, 0.0000005, 0, 0)
+ctrls = evolution.optimize(1000, 0.000005, 0, 0)
 
 print("lam:")
 print(evolution.lam)
@@ -83,6 +83,11 @@ times.append(times[-1] + (times[1] - times[0]))
 zerolist = []
 onelist = []
 new_fwd_evo = [_num_vec_to_op(state.detach().numpy(), glob_dim) for state in evolution.fwd_evo]
+
+print("Path Evo")
+print(evolution.PathDist_Evo)
+print("Path Ref")
+print(evolution.PathDist_ref)
 
 
 

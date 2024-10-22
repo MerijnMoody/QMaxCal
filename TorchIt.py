@@ -287,6 +287,11 @@ class LindBladEvolve(torch.nn.Module):
         
         self.lam = 0
         self.lam2 = 0
+
+        self.PathDist_ref = []
+        self.PathDist_Evo = []
+        self.PathDistref = None
+        self.PathDistEvo = None
         
         self.fid = 0
         self.jump = 0
@@ -391,27 +396,27 @@ class LindBladEvolve(torch.nn.Module):
                         state = torch.matmul(prop[i], state)
                         if m == 1:
                             state = state.reshape(self.dim, self.dim)
-                            prob_i = torch.diagonal(state.real, dim1=0, dim2=1)[i]
+                            # prob_i = torch.diagonal(state.real, dim1=0, dim2=1)[i]
                             state = state.reshape(self.dim * self.dim)
                             state = torch.matmul(torch.from_numpy(measure_operators[i]), state)
                         if m == 2:
                             state = state.reshape(self.dim, self.dim)
-                            prob_j = torch.diagonal(state.real, dim1=0, dim2=1)[j]
+                            # prob_j = torch.diagonal(state.real, dim1=0, dim2=1)[j]
                             state = state.reshape(self.dim * self.dim)
                             state = torch.matmul(torch.from_numpy(measure_operators[j]), state)
                         if m == 3:
                             state = state.reshape(self.dim, self.dim)
-                            prob_k = torch.diagonal(state.real, dim1=0, dim2=1)[k]
+                            # prob_k = torch.diagonal(state.real, dim1=0, dim2=1)[k]
                             state = state.reshape(self.dim * self.dim)
                             state = torch.matmul(torch.from_numpy(measure_operators[k]), state)
-                    probability = prob_i*prob_j*prob_k*torch.trace(state.reshape(self.dim, self.dim)).real
+                    # probability = prob_i*prob_j*prob_k*torch.trace(state.reshape(self.dim, self.dim)).real
+                    probability = torch.trace(state.reshape(self.dim, self.dim)).real
                     print(probability)
                     probability_distribution[self._binary_array_to_integer(np.array([i,j,k]))] = probability
                     raise TypeError(probability_distribution)
         total_sum = 0
         for i in range(len(probability_distribution)):
             total_sum += probability_distribution[i].item()
-        print(total_sum)
         probability_distribution = probability_distribution/total_sum
         raise TypeError(probability_distribution)
         return probability_distribution
@@ -469,7 +474,7 @@ class LindBladEvolve(torch.nn.Module):
                     
                     # Calculate final probability for this trajectory
                     final_state_matrix = state.reshape(dims, dims)
-                    trajectory_prob = prob_i * prob_j * prob_k * torch.trace(final_state_matrix).real
+                    trajectory_prob = torch.trace(final_state_matrix).real
                     
                     # Store probability in distribution
                     idx = self._binary_array_to_integer(torch.tensor([i, j, k]))
@@ -564,11 +569,13 @@ class LindBladEvolve(torch.nn.Module):
             self._evo_ref()
 
         p1 = self._path_prob_given_trajectory_claude(self.prop)
+        self.PathDistEvo = p1
         p2 = self._path_prob_given_trajectory_claude(self.prop_evo_ref)
         value = self._get_kl_divergence(p1,p2)
-        if value < 0:
-            raise TypeError(value, p1, p2)
-        return self._get_kl_divergence(p1, p2)
+        self.PathDistref = p2
+        # if value < -0.1:
+        #     raise TypeError(value, p1, p2)
+        return value
 
     def _get_fid(self):
         evo_final = self.fwd_evo[-1]
@@ -609,6 +616,7 @@ class LindBladEvolve(torch.nn.Module):
 
         lam = args[-1]
         lam2 = args[-2]
+        
         self.lam = lam
         self.lam2 = lam2
         
@@ -617,8 +625,8 @@ class LindBladEvolve(torch.nn.Module):
         self.fid_err = fid_error
         self.ent_err = ent_error
 
-        if ent_error < 0:
-            raise TypeError('ent_error is negative' + str( print(ent_error)))
+        # if ent_error < -0.1:
+        #     raise TypeError('ent_error is negative' + str( print(ent_error)))
 
         
         #jumps = self._get_jump()
@@ -635,7 +643,7 @@ class LindBladEvolve(torch.nn.Module):
         cont_error = (torch.linalg.vector_norm(pairwise_diffs_real) 
                       + torch.linalg.vector_norm(pairwise_diffs_im))
         
-        return lam * fid_error * 3000 + 10 * ent_error + lam2 * 10 * (energy + 5) ** 2 + 10 * (reg_error + 10*cont_error)
+        return lam * fid_error * 4000*0 + 1000000 * ent_error + lam2 * 10 * (energy + 5) ** 2*0 + 10 * (reg_error + 10*cont_error)*0
 
     def optimize(self, n_iters, learning_rate, constraint, fidelity_target):
         lam = [100.0]
@@ -657,14 +665,13 @@ class LindBladEvolve(torch.nn.Module):
         ctrls_im = torch.tensor(ctrls_im, requires_grad=True)
         
         optimizer = BasicGradientDescent([ctrls_real, ctrls_im, lam2, lam], lr=learning_rate)
-
         for i in range(n_iters):
             optimizer.zero_grad()
             loss = self.H([ctrls_real, ctrls_im, lam2, lam])
             loss.backward()
             optimizer.step()
             
-            if (i+1) % 2500 == 0 or i == 0:
+            if (i+1) % 100 == 0 or i == 0:
                 self.fid_grad.append(ctrls_real.grad)
                 self.fid_grad.append(ctrls_im.grad)
                 self.ctrls_list.append(self.ctrls_real.detach())
@@ -674,6 +681,8 @@ class LindBladEvolve(torch.nn.Module):
                 self.ent_error_list.append(self.ent_err)
                 self.energy_list.append(self.energy)
                 self.fid_err_list.append(self.fid_err)
+                self.PathDist_Evo.append(self.PathDistEvo)
+                self.PathDist_ref.append(self.PathDistref)
             
             if i == 5000:
                 for g in optimizer.param_groups:
