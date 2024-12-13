@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Tuple
 from collections import defaultdict
+import time
+from statistics import mean
 
 # Third-party imports
 import torch
@@ -11,7 +13,7 @@ from qutip import Qobj
 
 # Local imports
 from optimizers import QuantumOptimizer, OptimizationResult
-from Utils import BasisConfig, fidelity, evaluate_basis
+from Utils import BasisConfig, fidelity, evaluate_basis, calculate_frob_norm
 
 @dataclass
 class TrajectoryResult:
@@ -20,10 +22,10 @@ class TrajectoryResult:
     probability: torch.Tensor
     energy: torch.Tensor
     events: List[int]
-    state_trajectory: List[torch.Tensor]  # Added this field
-    time_points: torch.Tensor  # Added this field
-    jump_times: List[float]  # Add this field
-    jump_types: List[int]    # Add this field
+    state_trajectory: List[torch.Tensor]
+    time_points: torch.Tensor
+    jump_times: List[float]
+    jump_types: List[int]
 
 class LindBladEvolve(torch.nn.Module):
     """Quantum system evolution under Lindblad dynamics"""
@@ -66,6 +68,8 @@ class LindBladEvolve(torch.nn.Module):
         # Optimization parameters
         self.lam: torch.Tensor = torch.tensor(0.0)
         self.lam2: torch.Tensor = torch.tensor(0.0)
+
+        self.iteration_trajectories = []  # Store trajectories for each iteration
 
     def _get_ham(self, k: int) -> torch.Tensor:
         """Get Hamiltonian at time step k"""
@@ -169,13 +173,14 @@ class LindBladEvolve(torch.nn.Module):
             self._density_to_vector(self.initial_density), 
             dtype=torch.complex128
         ).view(-1)
-        
+
+        # Add initial state position to events list
+        initial_pos = torch.where(current_state.abs() > 0.9)[0].item()
+        events = [] 
+
         # Setup tracking variables
-        events = []
         energy = torch.tensor(0.0, dtype=torch.float64)
         prob_trajectory = torch.tensor(1.0, dtype=torch.float64)
-        
-        # Calculate effective non-Hermitian Hamiltonian
         sum_c_dag_c = sum(c_ops_dag_c)
         
         # Generate initial random threshold
@@ -185,72 +190,60 @@ class LindBladEvolve(torch.nn.Module):
         # Add trajectory storage
         state_trajectory = [current_state.clone()]
         time_points = self.time_list
-        
-        # Add jump tracking
         jump_times = []
         jump_types = []
-        
+
         for i in range(t_steps-1):
             # Get current Hamiltonian
             H = self._get_ham_no_controls() if ref else self._get_ham(i)
             H_eff = H - 0.5j * sum_c_dag_c
-            
-            # Propagate with effective Hamiltonian using matrix exponential
             propagator = torch.matrix_exp(-1j * dt * H_eff)
-            #propagator = 1 - 1j * dt * H_eff
             old_current_state = current_state
             current_state_candidate = propagator @ current_state
             norm_squared = (current_state_candidate.conj() @ current_state_candidate).real.item()
-            
+
             if norm_squared <= r or norm_squared < 1e-9:
-                # Calculate jump probabilities first
+                no_jump_prob = (old_current_state.conj() @ old_current_state).real.item()
+                prob_trajectory = prob_trajectory * no_jump_prob
+                
                 jump_probs = torch.stack([
-                    (current_state.conj() @ c_dag_c @ current_state).real
-                    for c_dag_c in c_ops_dag_c
+                    (current_state.conj() @ c_ops_dag_c[i] @ current_state).real
+                    for i in range(len(c_ops_dag_c))
                 ])
                 jump_probs = jump_probs / jump_probs.sum()
                 
                 with torch.no_grad():
-                    try:
-                        jump_idx = torch.multinomial(jump_probs, 1)[0]
-                    except:
-                        raise TypeError(str(jump_probs) + " " + str(current_state))
+                    jump_idx = torch.multinomial(jump_probs, 1)[0]
                 
-                # Record jump time and type after we have jump_idx
+                prob_trajectory = prob_trajectory * jump_probs[jump_idx]
                 jump_times.append(time_points[i].item())
                 jump_types.append(jump_idx.item())
                 
-                # Apply the jump
                 current_state = c_ops_tensors[jump_idx] @ old_current_state
                 norm_squared_after_jump = (current_state.conj() @ current_state).real.item()
                 events.append(jump_idx.item() + 1)
-                prob_trajectory = prob_trajectory * (1 - norm_squared)
-                # normalize state
                 current_state = current_state / torch.sqrt(torch.tensor(norm_squared_after_jump))
                 
-                # Generate new random threshold after jump
                 with torch.no_grad():
                     r = torch.rand(1).item()
             else:
                 current_state = current_state_candidate
                 events.append(0)
-                prob_trajectory = prob_trajectory * norm_squared
 
-            # Normalize state and store trajectory
-            # current_state = current_state / torch.sqrt(torch.tensor(norm_squared))
             state_trajectory.append(current_state.clone())
-            
             energy = energy + (current_state.conj() @ H @ current_state).real
+            
+        prob_trajectory = prob_trajectory * (current_state.conj() @ current_state).real
         
         return TrajectoryResult(
             final_state=current_state,
             probability=prob_trajectory,
             energy=energy,
-            events=events,
+            events=(initial_pos, events),
             state_trajectory=state_trajectory,
             time_points=time_points,
-            jump_times=jump_times,      # Add these
-            jump_types=jump_types       # new fields
+            jump_times=jump_times,
+            jump_types=jump_types
         )
 
     def _probability_distribution_estimate(self, ref: bool, max_iters: int) -> Tuple[List[torch.Tensor], Dict, torch.Tensor, torch.Tensor]:
@@ -261,54 +254,98 @@ class LindBladEvolve(torch.nn.Module):
         probability_distribution = defaultdict(lambda: torch.zeros(1, dtype=torch.float64))
         average_final_state = torch.zeros(self.dim, self.dim, dtype=torch.complex128)
         done = set()
+        all_trajectories = []
+        
+        # Add timing measurements
+        trajectory_times = []
 
         # Sample trajectories
         while num_samples < max_iters:
             num_samples += 1
+            # Time the trajectory sampling
+            start_time = time.time()
             result = self._sample_trajectory_new(ref)
+            end_time = time.time()
+            trajectory_times.append(end_time - start_time)
             
             # Update statistics without in-place operations
             final_state_not_normalized = torch.outer(result.final_state, result.final_state.conj())
             final_state = final_state_not_normalized/torch.trace(final_state_not_normalized)
             average_final_state += final_state
-        
             energy_sum = energy_sum + result.energy
 
-            # Record unique trajectories
-            events_tuple = tuple(result.events)
+            # Record unique trajectories with events that already include initial position
+            init_pos, events = result.events  # Unpack the tuple
+            events_tuple = (init_pos, tuple(events))  # Store as (init_pos, events)
             if events_tuple not in done:
                 probability_distribution[events_tuple] = result.probability
                 done.add(events_tuple)
 
+            populations = []
+            for state in result.state_trajectory:
+                norm = (state.conj() @ state).real.item()
+                state = state / torch.sqrt(torch.tensor(norm))
+                # Detach the tensor before converting to numpy
+                pop = (state[1]*state[1].conj()).real.detach().item()
+                populations.append(pop)
+            all_trajectories.append(populations)
+
+        # Print timing statistics
+        avg_time = mean(trajectory_times)
+        max_time = max(trajectory_times)
+        min_time = min(trajectory_times)
+        # print(f"\nTrajectory timing statistics:")
+        # print(f"Average time per trajectory: {avg_time:.4f} seconds")
+        # print(f"Min time: {min_time:.4f} seconds")
+        # print(f"Max time: {max_time:.4f} seconds")
+        # print(f"Total samples: {num_samples}")
+
         # Compute averages without in-place operations
         average_final_state = average_final_state/max_iters
-        #raise TypeError(average_final_state)
-        fidelity_sum = fidelity(
-            average_final_state, 
-            self.target.view(self.dim, self.dim)
+        
+        # Debug gradient information
+        print(f"average_final_state requires_grad: {average_final_state.requires_grad}")
+        print(f"target requires_grad: {self.target.requires_grad}")
+        
+        # Ensure proper reshaping and gradient propagation
+        target_reshaped = self.target.view(self.dim, self.dim).to(dtype=torch.complex128)
+        fidelity_avg = calculate_frob_norm(average_final_state, 
+                                           target_reshaped
         )
-        fidelity_avg = fidelity_sum / num_samples
+
+        print(f"Fidelity calc - input grads: {average_final_state.requires_grad}, {target_reshaped.requires_grad}")
+        
         energy_avg = energy_sum / num_samples
 
         # Normalize probability distribution
-        total_prob = sum(probability_distribution.values())
-        if total_prob > 0:
-            probability_distribution = {
-                k: v/total_prob 
-                for k, v in probability_distribution.items()
-            }
-                
+        # total_prob = sum(probability_distribution.values())
+        # if (total_prob > 0):
+        #     probability_distribution = {
+        #         k: v/total_prob 
+        #         for k, v in probability_distribution.items()
+        #     }
+        
+        # Calculate average trajectory and plot
+        avg_trajectory = np.mean(all_trajectories, axis=0)
+        std_trajectory = np.std(all_trajectories, axis=0)
+        
+        # Store the trajectory data if this is not a reference calculation
+        if not ref:
+            self.iteration_trajectories.append({
+                'avg': avg_trajectory,
+                'std': std_trajectory,
+                'time': self.time_list
+            })
+        
         return [], probability_distribution, energy_avg, fidelity_avg
 
-    def _get_kl_divergence(self, p1: Dict, p2: Dict, epsilon: float = 0.005) -> torch.Tensor:
+    def _get_kl_divergence(self, p1: Dict, p2: Dict, epsilon: float = 0.000005) -> torch.Tensor:
         """Calculate Kullback-Leibler divergence between two probability distributions"""
-        # Debug prints
-        print("\nDebugging KL divergence:")
-        print("Input distributions:")
-        print("p1:", {k: v.item() if isinstance(v, torch.Tensor) else v for k, v in p1.items()})
-        print("p2:", {k: v.item() if isinstance(v, torch.Tensor) else v for k, v in p2.items()})
-        
         all_keys = set(p1.keys()).union(set(p2.keys()))
+        overlapping_keys = set(p1.keys()).intersection(set(p2.keys()))
+        print(f"Overlapping keys: {len(overlapping_keys)}")
+        print(f"Total keys: {len(all_keys)}")
+        print(f"fraction of overlapping keys: {len(overlapping_keys)/len(all_keys)}")
         
         # Convert to tensors while maintaining gradients
         def to_tensor(val):
@@ -318,45 +355,40 @@ class LindBladEvolve(torch.nn.Module):
         
         p1 = {k: to_tensor(p1.get(k, epsilon)) for k in all_keys}
         p2 = {k: to_tensor(p2.get(k, epsilon)) for k in all_keys}
-        
-        print("\nAfter tensor conversion:")
-        print("p1:", {k: v.item() for k, v in p1.items()})
-        print("p2:", {k: v.item() for k, v in p2.items()})
 
         # Normalize distributions
         p1_sum = sum(p1.values())
         p2_sum = sum(p2.values())
-        print("\nSums before normalization:")
-        print(f"p1_sum: {p1_sum.item()}, p2_sum: {p2_sum.item()}")
         
         p1 = {k: v/p1_sum for k, v in p1.items()}
         p2 = {k: v/p2_sum for k, v in p2.items()}
-        
-        print("\nAfter normalization:")
-        print("p1:", {k: v.item() for k, v in p1.items()})
-        print("p2:", {k: v.item() for k, v in p2.items()})
 
         # Compute KL divergence term by term
-        kl_terms = []
+        kl_terms = {}
         for k in p1:
             term = p1[k] * torch.log(p1[k] / p2[k])
-            kl_terms.append(term)
-            print(f"\nTerm for key {k}:")
-            print(f"p1[k]: {p1[k].item():.6f}")
-            print(f"p2[k]: {p2[k].item():.6f}")
-            print(f"log term: {torch.log(p1[k] / p2[k]).item():.6f}")
-            print(f"full term: {term.item():.6f}")
+            kl_terms[k] = term
 
-        kl_div = sum(kl_terms)
-        print(f"\nFinal KL divergence: {kl_div.item():.6f}")
+        # Get 5 largest contributions
+        sorted_terms = sorted(kl_terms.items(), key=lambda x: abs(x[1].item()), reverse=True)
+        print("\nTop 5 KL divergence contributions:")
+        for k, v in sorted_terms[:10]:
+            print(f"Trajectory {k}:")
+            print(f"  p1: {p1[k].item():.7f}")
+            print(f"  p2: {p2[k].item():.7f}")
+            print(f"  contribution: {v.item():.7f}")
+
+        kl_div = sum(kl_terms.values())
         return kl_div
 
     def _get_err(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Calculate error metrics for current controls"""
-       # Get controlled evolution
-        evolution, p1, energy_average, fidelity_avg = self._probability_distribution_estimate(
+        print("\nEntering _get_err")
+        evolution, p1, energy_average, fidelity_avg, traj_data = self._probability_distribution_estimate(
             ref=False, max_iters=250
         )
+        print(f"After estimate - fidelity requires_grad: {fidelity_avg.requires_grad}")
+        
         self.control_evo = evolution
         self.PathDistEvo = p1
 
@@ -373,12 +405,8 @@ class LindBladEvolve(torch.nn.Module):
         return relative_entropy, energy_average, fidelity_avg
 
     def _loss_function(self, args: List) -> torch.Tensor:
-        """Calculate total loss for optimization
-        
-        Args:
-            args: List containing [params_real, params_im, lam2, lam]
-        """
-        # Unpack arguments
+        """Calculate total loss for optimization"""
+        # Don't detach parameters, keep original gradient chain
         params_real, params_im = args[0], args[1]
         self.lam2, self.lam = args[-2], args[-1]
 
@@ -392,30 +420,22 @@ class LindBladEvolve(torch.nn.Module):
             period=T
         )
 
-        # Evaluate controls
+        # Evaluate basis without forcing requires_grad
         self.ctrls_real = evaluate_basis(params_real, t_points, fourier_config)
         self.ctrls_im = evaluate_basis(params_im, t_points, fourier_config)
 
         # Calculate metrics
         relative_entropy, energy_average, fidelity_avg = self._get_err()
+        
+        # Store metrics
         self.fidelity = fidelity_avg
         self.relative_entropy = relative_entropy
         self.energy = energy_average
 
-        # Calculate regularization terms
-        reg_error = torch.linalg.vector_norm(self.ctrls_real) + torch.linalg.vector_norm(self.ctrls_im)
-        smoothness_error = (
-            torch.linalg.vector_norm(self.ctrls_real[1:] - self.ctrls_real[:-1]) + 
-            torch.linalg.vector_norm(self.ctrls_im[1:] - self.ctrls_im[:-1])
-        )
-
-        # Compute total loss (removed the zero multipliers)
-        return (
-            self.lam * fidelity_avg * 1000 + 
-            0 * relative_entropy * 10 + 
-            0 * self.lam2 * (energy_average + 5) ** 2 * 0.1 + 
-            0 * reg_error
-        )
+        # Simple loss
+        loss = fidelity_avg * 10
+        
+        return loss
 
     def optimize(self, n_iters: int, learning_rate: float, 
                 constraint: Optional[float], fidelity_target: Optional[float]):

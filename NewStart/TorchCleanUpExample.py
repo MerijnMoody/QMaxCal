@@ -21,13 +21,13 @@ def setup_quantum_system():
     times = np.linspace(0, evo_time, n_ts)
     
     # Collapse operators
-    c1, c2, c3 = -1.5, 0, 0
-    c_ops = [c1*a, c2*a.dag(), c3*(a+a.dag())]
+    c1, c2, c3 = -1.5, -1.5, 0
+    c_ops = [c1*a, c2*a*a.dag(), c3*(a+a.dag())]
     L0 = liouvillian(H_sys, c_ops=c_ops)
     
     # Initial and target states
-    #rho0 = operator_to_vector(Qobj([[0.7,0],[0,0.3]]))
-    rho0 = operator_to_vector(Qobj([[0.7,0],[0,0.3]]))
+    rho0 = operator_to_vector(Qobj([[1,0],[0,0]]))
+    # rho0 = operator_to_vector(Qobj([[1,0],[0,0]]))
     rhotar = operator_to_vector(Qobj([[0.1,0],[0,0.9]]))
     
     return L0, H_con, Ham_list, rho0, rhotar, times[:-1], glob_dim, None, 10, c_ops
@@ -73,7 +73,8 @@ def main():
     # Setup and run optimization
     system_params = setup_quantum_system()
     evolution = create_evolution(*system_params)
-    result = evolution.optimize(n_iters=30, learning_rate=0.005, constraint=0, fidelity_target=0)
+    # Increased learning rate and iterations
+    result = evolution.optimize(n_iters=400, learning_rate=0.01, constraint=0, fidelity_target=0)
     
     # Plot and print results
     plot_optimization_results(result)

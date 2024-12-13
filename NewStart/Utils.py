@@ -1,9 +1,8 @@
-
 from dataclasses import dataclass
 from typing import Optional, List
 import torch
 import numpy as np
-from scipy.linalg import logm, sqrtm
+from scipy.linalg import logm
 
 @dataclass
 class BasisConfig:
@@ -20,18 +19,18 @@ def matrix_logarithm(A: torch.Tensor) -> torch.Tensor:
     log_A_np = logm(A_np)
     return torch.tensor(log_A_np, dtype=A.dtype, device=A.device)
 
-def matrix_sqrtm(A: torch.Tensor) -> torch.Tensor:
-    """Compute matrix square root using scipy's sqrtm"""
-    A_np = A.detach().cpu().numpy()
-    sqrt_A_np = sqrtm(A_np)
-    return torch.tensor(sqrt_A_np, dtype=A.dtype, device=A.device)
+def matrix_sqrtm(matrix: torch.Tensor) -> torch.Tensor:
+    """Compute matrix square root using eigendecomposition"""
+    eigenvalues, eigenvectors = torch.linalg.eigh(matrix)
+    eigenvalues = eigenvalues.to(dtype=torch.complex128)
+    return eigenvectors @ torch.diag(torch.sqrt(eigenvalues)) @ eigenvectors.T
 
-def fidelity(rho: torch.Tensor, sigma: torch.Tensor) -> float:
+def fidelity(rho: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
     """Compute quantum fidelity between two density matrices"""
     sqrt_rho = matrix_sqrtm(rho)
     interm_matrix = sqrt_rho @ sigma @ sqrt_rho
     sqrt_interm_matrix = matrix_sqrtm(interm_matrix)
-    return torch.norm(torch.trace(sqrt_interm_matrix)).real
+    return torch.abs(torch.norm(torch.trace(sqrt_interm_matrix)))
 
 def fourier_basis(t: torch.Tensor, i: int, degree: int, period: float = 1.0) -> torch.Tensor:
     """Evaluate Fourier basis function"""
@@ -76,3 +75,14 @@ def evaluate_basis(parameters: torch.Tensor, t: torch.Tensor, config: BasisConfi
     
     basis_matrix = torch.stack(basis_vals, dim=1)
     return torch.matmul(basis_matrix, parameters)
+
+def calculate_frob_norm(evo_final: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Calculate Frobenius norm between evolution final state and target state"""
+    # Ensure inputs maintain gradients
+    if not evo_final.requires_grad:
+        print("Warning: evo_final does not require grad")
+    
+    # Add .to(dtype=torch.complex128) to ensure consistent dtype
+    diff = evo_final.to(dtype=torch.complex128) - target.to(dtype=torch.complex128)
+    # Use torch.norm instead of matrix_norm for better gradient propagation
+    return torch.norm(diff)
