@@ -10,7 +10,7 @@ def setup_quantum_system():
     a = destroy(glob_dim)
     con2 = Qobj([[0,0], [0, 1]])
     
-    # Hamiltonians
+    # Hamiltoniansaaas
     H_sys = a.dag()*a
     H_con = [[liouvillian(a), liouvillian(a.dag())]]
     Ham_list = [[0.5 * H_sys.full(), 0.5 * H_sys.full()], [a.full(), a.dag().full()]]
