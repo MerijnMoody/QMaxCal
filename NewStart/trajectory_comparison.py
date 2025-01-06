@@ -36,7 +36,7 @@ def run_torch_trajectories(evolution, n_samples=100):
     
     return avg_trajectory, std_trajectory, result.time_points, avg_final_state
 
-def run_qutip_mcsolve(n_trajectories=100):
+def run_qutip_mcsolve(evolution, n_trajectories=100,):
     """Run quantum trajectories using QuTiP's mcsolve"""
     # Get system parameters from setup function
     L0, H_con, Ham_list, rho0, rhotar, times, glob_dim, _, _, c_ops = setup_quantum_system()
@@ -46,7 +46,8 @@ def run_qutip_mcsolve(n_trajectories=100):
     
     # Run mcsolve with updated options
     #print("resultmc")
-    H = Qobj(2 * Ham_list[0][0])
+    print(evolution.ctrls_real)
+    H = [Qobj(2*Ham_list[0][0]), [Qobj(Ham_list[1][0] + Ham_list[1][1]), evolution.ctrls_real], [Qobj(Ham_list[1][0] - Ham_list[1][1]), evolution.ctrls_im*1j]]
     result = mcsolve(H, psi0, times, c_ops, ntraj=n_trajectories)
     print(result.states)
     #print("resultmc")
@@ -62,7 +63,7 @@ def run_qutip_mcsolve(n_trajectories=100):
     #std_trajectory = np.std(populations, axis=1)
     return populations, times
 
-def run_qutip_mesolve(times):
+def run_qutip_mesolve(times, evolution):
     """Run quantum master equation using QuTiP's mesolve"""
     # Get system parameters from setup function
     L0, H_con, Ham_list, rho0, rhotar, times, glob_dim, _, _, c_ops = setup_quantum_system()
@@ -73,7 +74,7 @@ def run_qutip_mesolve(times):
     rho0 = Qobj([[1,0],[0,0]])
     #psi0 = basis(glob_dim, 0)
     # Run mesolve
-    H = Qobj(2*Ham_list[0][0])
+    H = [Qobj(2*Ham_list[0][0]), [Qobj(Ham_list[1][0] + Ham_list[1][1]), evolution.ctrls_real], [Qobj(Ham_list[1][0] - Ham_list[1][1]), evolution.ctrls_im*1j]]
     result = mesolve(H, rho0, times, c_ops)
     #result = mesolve(H, psi0, times, c_ops)
     print(result.states)
@@ -190,12 +191,12 @@ def main():
     
     # Run all original comparison methods
     torch_avg, torch_std, torch_times,_ = run_torch_trajectories(evolution)
-    qutip_avg, qutip_times = run_qutip_mcsolve()
-    mesolve_avg = run_qutip_mesolve(qutip_times)
+    qutip_avg, qutip_times = run_qutip_mcsolve(evolution)
+    mesolve_avg = run_qutip_mesolve(qutip_times, evolution)
     
-    # Run multiple trajectory sets comparison
-    print("\nRunning multiple trajectory sets comparison...")
-    compare_multiple_runs(evolution, n_runs=5, n_samples=100)
+    # # Run multiple trajectory sets comparison
+    # print("\nRunning multiple trajectory sets comparison...")
+    # compare_multiple_runs(evolution, n_runs=5, n_samples=100)
     
     # Compute errors
     error_mcsolve = compute_trajectory_error(torch_times, torch_avg, qutip_times, qutip_avg)

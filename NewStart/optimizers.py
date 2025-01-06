@@ -71,8 +71,8 @@ class QuantumOptimizer:
 
     def initialize_parameters(self, n_params: int, n_ctrls: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """Initialize control parameters"""
-        params_real = torch.mul(torch.rand((n_params, n_ctrls)), 1)
-        params_im = torch.mul(torch.rand((n_params, n_ctrls)), 1)
+        params_real = torch.mul(torch.rand((n_params, n_ctrls)), 1.0)
+        params_im = torch.mul(torch.rand((n_params, n_ctrls)), 1.0)
         return params_real.requires_grad_(True), params_im.requires_grad_(True)
 
     def optimize(self, n_iters: int, constraint: Optional[float] = None, 
@@ -94,11 +94,13 @@ class QuantumOptimizer:
         )
 
         for i in range(n_iters):
+            print(f"\nIteration {i+1}/{n_iters}")
             optimizer.zero_grad()
             loss = self.system._loss_function([params_real, params_im, lam, lam2])
             loss.backward()
             optimizer.step()
             
+            print(loss)
             # Store history
             self.parameter_history['real'].append(params_real.detach().clone())
             self.parameter_history['imag'].append(params_im.detach().clone())

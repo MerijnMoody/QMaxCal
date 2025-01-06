@@ -25,6 +25,10 @@ def compare_trajectory_probabilities(system: LindBladEvolve, distribution: Dict,
 
 def get_kl_divergence(p1: Dict, p2: Dict, system: LindBladEvolve) -> torch.Tensor:
     """Calculate Kullback-Leibler divergence between two probability distributions"""
+    # Make deep copies of input dictionaries
+    p1 = {k: v.clone() if isinstance(v, torch.Tensor) else v for k, v in p1.items()}
+    p2 = {k: v.clone() if isinstance(v, torch.Tensor) else v for k, v in p2.items()}
+    
     all_keys = set(p1.keys()).union(set(p2.keys()))
     overlapping_keys = set(p1.keys()).intersection(set(p2.keys()))
     missing_keys = set(p1.keys()) - set(p2.keys())
@@ -34,72 +38,61 @@ def get_kl_divergence(p1: Dict, p2: Dict, system: LindBladEvolve) -> torch.Tenso
     print(f"Missing keys: {len(missing_keys)}")
     
     # Calculate probabilities for missing trajectories and track NaN values
-    nan_count = 0
+    nan_keys = []
     for traj in missing_keys:
         prob = get_trajectory_probability(system, traj, ref=True)
         if torch.isnan(prob):
-            nan_count += 1
+            nan_keys.append(traj)
             continue
         p2[traj] = prob
     
-    print(f"NaN probabilities encountered: {nan_count}")
+    print(f"NaN probabilities encountered: {len(nan_keys)}")
+     
+    # Also remove these keys from p1
+    for k in nan_keys:
+        if k in p1:
+            print(f"Removing key {k} from p1")
+            print(f"Value at key {k}: {p1[k]}")
+            del p1[k]
     
-    # Store original p1 values for NaN keys and remove them from p1
-    nan_keys_with_probs = {
-        k: p1[k] for k in p1.keys() 
-        if k in p2 and torch.isnan(p2[k])
-    }
-    
-    # Filter out NaN values from both distributions
-    p1_filtered = {k: v for k, v in p1.items() if k not in nan_keys_with_probs}
-    p2_filtered = {k: v for k, v in p2.items() 
-                  if k in p1_filtered and not torch.isnan(v)}
-    
-    # Convert to tensors while maintaining gradients
+    # Convert remaining values to tensors
     def to_tensor(val):
         if isinstance(val, torch.Tensor):
             return val
         return torch.tensor(val, dtype=torch.float64, requires_grad=True)
     
-    # Convert only filtered values
-    p1 = {k: to_tensor(p1_filtered[k]) for k in p1_filtered.keys()}
-    p2 = {k: to_tensor(p2_filtered[k]) for k in p1.keys()}
+    p1 = {k: to_tensor(p1[k]) for k in p1.keys()}
+    p2 = {k: to_tensor(p2[k]) for k in p1.keys()}
     
-    # Normalize distributions using only non-NaN values
+    # Normalize distributions using only valid values
     p1_sum = sum(p1.values())
     p2_sum = sum(p2.values())
 
-    print(f"Sum of valid p1: {p1_sum}")
-    print(f"Sum of valid p2: {p2_sum}")
-    print(f"len(valid p1): {len(p1)}")
-    print(f"len(valid p2): {len(p2)}")
+    print(f"\nAfter NaN removal:")
+    print(f"Sum of p1: {p1_sum}")
+    print(f"Sum of p2: {p2_sum}")
+    print(f"len(p1): {len(p1)}")
+    print(f"len(p2): {len(p2)}")
     
+    # Normalize
     p1 = {k: v/p1_sum for k, v in p1.items()}
     p2 = {k: v/p2_sum for k, v in p2.items()}
 
-    # Compute KL divergence term by term for non-NaN values only
+    # Compute KL divergence term by term
     kl_terms = {}
     for k in p1:
         term = p1[k] * torch.log(p1[k] / p2[k])
         kl_terms[k] = term
 
     kl_div = sum(kl_terms.values())
-    
-    # Print deleted keys sorted by their original probabilities
-    print("\nDeleted trajectories (sorted by probability):")
-    sorted_nan_keys = sorted(
-        nan_keys_with_probs.items(), 
-        key=lambda x: x[1].item() if isinstance(x[1], torch.Tensor) else x[1],
-        reverse=True
-    )
-    for k, v in sorted_nan_keys:
-        prob_value = v.item() if isinstance(v, torch.Tensor) else v
-        print(f"Trajectory {k}: probability = {prob_value:.7f}")
-    
     return kl_div
 
 def get_kl_divergence_with_penalty(p1: Dict, p2: Dict, system: LindBladEvolve) -> torch.Tensor:
     """Calculate Kullback-Leibler divergence between two probability distributions"""
+    # Make deep copies of input dictionaries
+    p1 = {k: v.clone() if isinstance(v, torch.Tensor) else v for k, v in p1.items()}
+    p2 = {k: v.clone() if isinstance(v, torch.Tensor) else v for k, v in p2.items()}
+    
     all_keys = set(p1.keys()).union(set(p2.keys()))
     overlapping_keys = set(p1.keys()).intersection(set(p2.keys()))
     missing_keys = set(p1.keys()) - set(p2.keys())
@@ -274,15 +267,16 @@ def run_kl_sensitivity_test(n_trials: int = 10, max_iters: int = 100):
         _, ref_dist, _, _ = evolution._probability_distribution_estimate(ref=True, max_iters=max_iters)
         _, control_dist, _, _ = evolution._probability_distribution_estimate(ref=False, max_iters=max_iters)
         
+        print("\nTesting KL divergence with penalty:")
+        kl_div_penalty = get_kl_divergence_with_penalty(control_dist, ref_dist, evolution)
+        print(f"KL with penalty: {kl_div_penalty.item()}")
+        kl_penalty_values.append(kl_div_penalty.item())
+        
         print("\nTesting regular KL divergence:")
         kl_div = get_kl_divergence(control_dist, ref_dist, evolution)
         print(f"Regular KL: {kl_div.item()}")
         kl_values.append(kl_div.item())
         
-        print("\nTesting KL divergence with penalty:")
-        kl_div_penalty = get_kl_divergence_with_penalty(control_dist, ref_dist, evolution)
-        print(f"KL with penalty: {kl_div_penalty.item()}")
-        kl_penalty_values.append(kl_div_penalty.item())
     
     # Compute statistics for both methods
     for name, values in [("Regular KL", kl_values), ("KL with penalty", kl_penalty_values)]:
@@ -319,7 +313,8 @@ def run_kl_sensitivity_test(n_trials: int = 10, max_iters: int = 100):
     return kl_values, kl_penalty_values
 
 def main():
-    regular_kl, penalty_kl = run_kl_sensitivity_test(n_trials=10, max_iters=150)
+    # Run sensitivity test
+    regular_kl, penalty_kl = run_kl_sensitivity_test(n_trials=10, max_iters=100)
 
 if __name__ == "__main__":
     main()

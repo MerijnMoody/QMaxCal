@@ -10,7 +10,7 @@ def setup_quantum_system():
     a = destroy(glob_dim)
     con2 = Qobj([[0,0], [0, 1]])
     
-    # Hamiltoniansaaas
+    # Hamiltonians
     H_sys = a.dag()*a
     H_con = [[liouvillian(a), liouvillian(a.dag())]]
     Ham_list = [[0.5 * H_sys.full(), 0.5 * H_sys.full()], [a.full(), a.dag().full()]]
@@ -74,7 +74,7 @@ def main():
     system_params = setup_quantum_system()
     evolution = create_evolution(*system_params)
     # Increased learning rate and iterations
-    result = evolution.optimize(n_iters=400, learning_rate=0.01, constraint=0, fidelity_target=0)
+    result = evolution.optimize(n_iters=200, learning_rate=0.07, constraint=0, fidelity_target=0)
     
     # Plot and print results
     plot_optimization_results(result)
