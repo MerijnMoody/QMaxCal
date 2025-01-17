@@ -256,6 +256,7 @@ class LindBladEvolve(torch.nn.Module):
             trajectory_data: Tuple of (initial_position, events_list)
             ref: Whether to use reference Hamiltonian
         """
+        
         init_pos, events = trajectory_data
         dt = self.dt
         
