@@ -86,6 +86,40 @@ class LindBladEvolve(torch.nn.Module):
         """Get base Hamiltonian without controls"""
         return torch.tensor(self.ham_list[0][0] + self.ham_list[0][1])
 
+    def _compute_propagator_ref(self):
+        t_steps = len(self.time_list)
+        dt = self.dt
+
+        c_ops_tensors = [torch.tensor(c.full(), dtype=torch.complex128) for c in self.c_ops]
+        c_ops_dag_c = [torch.tensor((c.dag() * c).full(), dtype=torch.complex128) for c in self.c_ops]
+        sum_c_dag_c = sum(c_ops_dag_c)
+
+        propagators = torch.zeros(t_steps, 2, 2, dtype=torch.complex128)
+        for i in range(t_steps-1):
+            # Get Hamiltonian without controls
+            H = self._get_ham_no_controls()
+            H_eff = H - 0.5j * sum_c_dag_c
+            propagators[i] = torch.matrix_exp(-1j * dt * H_eff)
+        
+        self.propagator_ref = propagators
+
+    def _compute_propagator(self):
+        t_steps = len(self.time_list)
+        dt = self.dt
+
+        c_ops_tensors = [torch.tensor(c.full(), dtype=torch.complex128) for c in self.c_ops]
+        c_ops_dag_c = [torch.tensor((c.dag() * c).full(), dtype=torch.complex128) for c in self.c_ops]
+        sum_c_dag_c = sum(c_ops_dag_c)
+
+        propagators = torch.zeros(t_steps, 2, 2, dtype=torch.complex128)
+        for i in range(t_steps-1):
+            # Get current Hamiltonian
+            H = self._get_ham(i)
+            H_eff = H - 0.5j * sum_c_dag_c
+            propagators[i] = torch.matrix_exp(-1j * dt * H_eff)
+        
+        self.propagator = propagators
+
     def _density_to_vector(self, density_matrix: Qobj) -> Qobj:
         """Convert density matrix to state vector
         
@@ -100,71 +134,7 @@ class LindBladEvolve(torch.nn.Module):
         # Convert probabilities to amplitudes by taking sqrt
         return purestart
 
-    def _sample_trajectory(self, ref: bool) -> TrajectoryResult:
-        """Sample a single quantum trajectory"""
-        # Pre-compute tensors
-        dt = self.dt
-        c_ops_tensors = [torch.tensor(c.full(), dtype=torch.complex128) for c in self.c_ops]
-        c_ops_dag_c = [torch.tensor((c.dag() * c).full(), dtype=torch.complex128) for c in self.c_ops]
-        kraus_operators = [c * np.sqrt(dt) for c in c_ops_tensors]
-        
-        # Initialize state
-        current_state = torch.tensor(
-            self._density_to_vector(self.initial_density).full(), 
-            dtype=torch.complex128
-        ).view(-1)
-        
-        # Setup tracking variables
-        t_steps = len(self.time_list)
-        events = torch.zeros(t_steps-1, dtype=torch.long)
-        energy = torch.tensor(0.0, dtype=torch.float64)
-        prob_trajectory = torch.tensor(1.0, dtype=torch.float64)
-        
-        # Pre-compute common matrices
-        eye = torch.eye(2, dtype=torch.complex128)
-        sum_c_dag_c = sum(c_ops_dag_c)
-        
-        # Evolution loop
-        for i in range(t_steps-1):
-            H = self._get_ham_no_controls() if ref else self._get_ham(i)
-            
-            # Calculate jump probabilities with gradient tracking
-            probs = torch.stack([
-                (current_state.conj() @ c @ current_state * dt).real
-                for c in c_ops_dag_c
-            ])
-            
-            # Debug print for probabilities
-            print(f"Step {i}, Probabilities:", probs)
-            
-            no_jump_prob = 1 - probs.sum()
-            probs = torch.cat([torch.tensor([no_jump_prob]), probs])
-            probs = probs / probs.sum()
-            print(f"After normalization:", probs)
-
-            # Sample without breaking gradient
-            with torch.no_grad():  # Only the sampling should be without gradient
-                event_index = torch.multinomial(probs, 1)[0]
-            print(f"Selected event: {event_index}")
-            prob_trajectory = prob_trajectory * probs[event_index]  # Keep gradient here
-            
-            # Update state while maintaining gradient flow
-            if event_index == 0:
-                current_state = (eye - (1j * H + 0.5 * sum_c_dag_c) * dt) @ current_state
-            else:
-                current_state = kraus_operators[event_index - 1] @ current_state
-            
-            current_state = current_state / torch.norm(current_state)
-            energy = energy + (current_state.conj() @ H @ current_state).real
-
-        return TrajectoryResult(
-            final_state=current_state,  # Maintains gradient
-            probability=prob_trajectory,  # Maintains gradient
-            energy=energy,
-            events=events.tolist()
-        )
-    
-    def _sample_trajectory_new(self, ref: bool) -> TrajectoryResult:
+    def _sample_trajectory_new(self, ref: bool = False) -> TrajectoryResult:
         """Implement quantum jump algorithm for trajectory sampling"""
         dt = self.dt
         t_steps = len(self.time_list)
@@ -172,6 +142,8 @@ class LindBladEvolve(torch.nn.Module):
         # Initialize operators and state
         c_ops_tensors = [torch.tensor(c.full(), dtype=torch.complex128) for c in self.c_ops]
         c_ops_dag_c = [torch.tensor((c.dag() * c).full(), dtype=torch.complex128) for c in self.c_ops]
+        sum_c_dag_c = sum(c_ops_dag_c)
+
         current_state = torch.tensor(
             self._density_to_vector(self.initial_density), 
             dtype=torch.complex128
@@ -179,12 +151,14 @@ class LindBladEvolve(torch.nn.Module):
 
         # Add initial state position to events list
         initial_pos = torch.where(current_state.abs() > 0.9)[0].item()
+        #print(current_state.abs())
+        #initial_pos = torch.argmax(current_state.abs()).item()
         events = [] 
 
         # Setup tracking variables
         energy = torch.tensor(0.0, dtype=torch.float64)
         prob_trajectory = torch.tensor(1.0, dtype=torch.float64)
-        sum_c_dag_c = sum(c_ops_dag_c)
+    
         
         # Generate initial random threshold
         with torch.no_grad():
@@ -199,8 +173,8 @@ class LindBladEvolve(torch.nn.Module):
         for i in range(t_steps-1):
             # Get current Hamiltonian
             H = self._get_ham_no_controls() if ref else self._get_ham(i)
-            H_eff = H - 0.5j * sum_c_dag_c
-            propagator = torch.matrix_exp(-1j * dt * H_eff)
+            #H_eff = H - 0.5j * sum_c_dag_c
+            propagator = self.propagator_ref[i] if ref else self.propagator[i]
             old_current_state = current_state
             current_state_candidate = propagator @ current_state
             norm_squared = (current_state_candidate.conj() @ current_state_candidate).real.item()
@@ -237,7 +211,7 @@ class LindBladEvolve(torch.nn.Module):
             energy = energy + (current_state.conj() @ H @ current_state).real
             
         prob_trajectory = prob_trajectory * (current_state.conj() @ current_state).real
-        
+
         return TrajectoryResult(
             final_state=current_state,
             probability=prob_trajectory,
@@ -256,7 +230,6 @@ class LindBladEvolve(torch.nn.Module):
             trajectory_data: Tuple of (initial_position, events_list)
             ref: Whether to use reference Hamiltonian
         """
-        
         init_pos, events = trajectory_data
         dt = self.dt
         
@@ -304,120 +277,6 @@ class LindBladEvolve(torch.nn.Module):
         final_prob = prob * (current_state.conj() @ current_state).real
         return final_prob
 
-    def _parallel_trajectory_sample(self, ref: bool, n_processes: int = 4) -> List[TrajectoryResult]:
-        """Sample multiple trajectories in parallel"""
-        with mp.Pool(processes=n_processes) as pool:
-            # Create a partial function with fixed ref parameter
-            sample_func = partial(self._sample_trajectory_new, ref=ref)
-            # Generate trajectories in parallel
-            results = pool.map(sample_func, [None] * self.n_ts)
-        return results
-
-    def _vectorized_trajectory_sample(self, ref: bool, batch_size: int) -> List[TrajectoryResult]:
-        """Sample multiple trajectories in parallel using vectorization"""
-        dt = self.dt
-        t_steps = len(self.time_list)
-        
-        # Initialize operators with batch dimension
-        c_ops_tensors = [torch.tensor(c.full(), dtype=torch.complex128).expand(batch_size, -1, -1) 
-                        for c in self.c_ops]
-        c_ops_dag_c = [torch.tensor((c.dag() * c).full(), dtype=torch.complex128).expand(batch_size, -1, -1) 
-                      for c in self.c_ops]
-        
-        # Initialize batch of states
-        initial_states = []
-        for _ in range(batch_size):
-            state = torch.tensor(self._density_to_vector(self.initial_density), dtype=torch.complex128)
-            initial_states.append(state)
-        current_states = torch.stack(initial_states)  # [batch_size, dim]
-        
-        # Setup tracking variables
-        energies = torch.zeros(batch_size, dtype=torch.float64)
-        prob_trajectories = torch.ones(batch_size, dtype=torch.float64)
-        all_events = [[] for _ in range(batch_size)]
-        state_trajectories = [[] for _ in range(batch_size)]
-        jump_times = [[] for _ in range(batch_size)]
-        jump_types = [[] for _ in range(batch_size)]
-        
-        # Record initial positions
-        initial_positions = torch.where(current_states.abs() > 0.9)[1]
-        
-        # Evolution loop
-        for i in range(t_steps-1):
-            # Get Hamiltonian (batched)
-            H = self._get_ham_no_controls() if ref else self._get_ham(i)
-            H = H.expand(batch_size, -1, -1)
-            H_eff = H - 0.5j * sum(c_ops_dag_c)
-            
-            # Vectorized evolution
-            propagator = torch.matrix_exp(-1j * dt * H_eff)
-            old_states = current_states
-            current_states = torch.bmm(propagator, current_states.unsqueeze(-1)).squeeze(-1)
-            
-            # Calculate jump probabilities
-            norm_squared = (current_states.conj() * current_states).sum(dim=1).real
-            
-            # Generate random numbers for all trajectories
-            with torch.no_grad():
-                r = torch.rand(batch_size)
-            
-            # Find which trajectories need jumps
-            jump_mask = (norm_squared <= r) | (norm_squared < 1e-9)
-            
-            if jump_mask.any():
-                # Process jumps for trajectories that need them
-                jump_indices = torch.where(jump_mask)[0]
-                
-                for idx in jump_indices:
-                    # Calculate jump probabilities for this trajectory
-                    jump_probs = torch.stack([
-                        (old_states[idx].conj() @ c_ops_dag_c[j][idx] @ old_states[idx]).real
-                        for j in range(len(c_ops_dag_c))
-                    ])
-                    jump_probs = jump_probs / jump_probs.sum()
-                    
-                    with torch.no_grad():
-                        jump_type = torch.multinomial(jump_probs, 1)[0]
-                    
-                    # Update trajectory information
-                    prob_trajectories[idx] *= jump_probs[jump_type]
-                    all_events[idx].append(jump_type.item() + 1)
-                    jump_times[idx].append(self.time_list[i].item())
-                    jump_types[idx].append(jump_type.item())
-                    
-                    # Apply jump
-                    current_states[idx] = c_ops_tensors[jump_type][idx] @ old_states[idx]
-                    current_states[idx] /= torch.sqrt(torch.tensor(
-                        (current_states[idx].conj() @ current_states[idx]).real
-                    ))
-            
-            # No-jump evolution for other trajectories
-            no_jump_mask = ~jump_mask
-            if no_jump_mask.any():
-                for idx in torch.where(no_jump_mask)[0]:
-                    all_events[idx].append(0)
-            
-            # Store states and update energies
-            for b in range(batch_size):
-                state_trajectories[b].append(current_states[b].clone())
-                energies[b] += (current_states[b].conj() @ H[b] @ current_states[b]).real
-        
-        # Create TrajectoryResult objects
-        results = []
-        for b in range(batch_size):
-            results.append(TrajectoryResult(
-                final_state=current_states[b],
-                probability=prob_trajectories[b],
-                energy=energies[b],
-                events=(initial_positions[b].item(), all_events[b]),
-                state_trajectory=state_trajectories[b],
-                time_points=self.time_list,
-                jump_times=jump_times[b],
-                jump_types=jump_types[b]
-            ))
-        
-        return results
-
     def _probability_distribution_estimate(self, ref: bool, max_iters: int) -> Tuple[List[torch.Tensor], Dict, torch.Tensor, torch.Tensor]:
         """Estimate probability distribution from quantum trajectories"""
         num_samples = 0
@@ -431,50 +290,42 @@ class LindBladEvolve(torch.nn.Module):
         # Add timing measurements
         trajectory_times = []
 
+        start_time = time.time()
+
         # Sample trajectories
-        batch_size = 32  # Adjust based on memory constraints
+        batch_size = 1  # Adjust based on memory constraints
         while num_samples < max_iters:
             current_batch = min(batch_size, max_iters - num_samples)
-            results = self._vectorized_trajectory_sample(ref, current_batch)
+            result = self._sample_trajectory_new(ref)
             
-            for result in results:
-                num_samples += 1
-                # Time the trajectory sampling
-                start_time = time.time()
-                end_time = time.time()
-                trajectory_times.append(end_time - start_time)
-                
-                # Update statistics without in-place operations
-                final_state_not_normalized = torch.outer(result.final_state, result.final_state.conj())
-                final_state = final_state_not_normalized/torch.trace(final_state_not_normalized)
-                average_final_state += final_state
-                energy_sum = energy_sum + result.energy
+            num_samples += 1
+            # Time the trajectory sampling
+            
+            # Update statistics without in-place operations
+            final_state_not_normalized = torch.outer(result.final_state, result.final_state.conj())
+            final_state = final_state_not_normalized/torch.trace(final_state_not_normalized)
+            average_final_state += final_state
+            energy_sum = energy_sum + result.energy
 
-                # Record unique trajectories with events that already include initial position
-                init_pos, events = result.events  # Unpack the tuple
-                events_tuple = (init_pos, tuple(events))  # Store as (init_pos, events)
-                if events_tuple not in done:
-                    probability_distribution[events_tuple] = result.probability
-                    done.add(events_tuple)
+            # Record unique trajectories with events that already include initial position
+            init_pos, events = result.events  # Unpack the tuple
+            events_tuple = (init_pos, tuple(events))  # Store as (init_pos, events)
+            if events_tuple not in done:
+                probability_distribution[events_tuple] = result.probability
+                done.add(events_tuple)
 
-                populations = []
-                for state in result.state_trajectory:
-                    norm = (state.conj() @ state).real.item()
-                    state = state / torch.sqrt(torch.tensor(norm))
-                    # Detach the tensor before converting to numpy
-                    pop = (state[1]*state[1].conj()).real.detach().item()
-                    populations.append(pop)
-                all_trajectories.append(populations)
+            populations = []
+            for state in result.state_trajectory:
+                norm = (state.conj() @ state).real.item()
+                state = state / torch.sqrt(torch.tensor(norm))
+                # Detach the tensor before converting to numpy
+                pop = (state[1]*state[1].conj()).real.detach().item()
+                populations.append(pop)
+            all_trajectories.append(populations)
 
         # Print timing statistics
-        avg_time = mean(trajectory_times)
-        max_time = max(trajectory_times)
-        min_time = min(trajectory_times)
-        # print(f"\nTrajectory timing statistics:")
-        # print(f"Average time per trajectory: {avg_time:.4f} seconds")
-        # print(f"Min time: {min_time:.4f} seconds")
-        # print(f"Max time: {max_time:.4f} seconds")
-        # print(f"Total samples: {num_samples}")
+        end_time = time.time()
+        print(f"_parallel_trajectory_sample took {end_time - start_time:.4f} seconds")
 
         # Compute averages without in-place operations
         average_final_state = average_final_state/max_iters
@@ -563,6 +414,8 @@ class LindBladEvolve(torch.nn.Module):
         
         # Calculate probabilities for missing trajectories and track NaN values
         nan_count = 0
+
+        start_time = time.time()
         for traj in missing_keys:
             prob = self._get_trajectory_probability(traj, ref=True)  # Fixed: removed self as argument
             if torch.isnan(prob):
@@ -570,6 +423,8 @@ class LindBladEvolve(torch.nn.Module):
                 p2[traj] = prob  # Add NaN keys to p2
                 continue
             p2[traj] = prob
+        end_time = time.time()
+        print(f"_sample_missing_keys took {end_time - start_time:.4f} seconds")
 
         # If I have NaN values, I want to add them to the dictionary just for expanding it.
         # Make deep copies of input dictionaries
@@ -663,6 +518,8 @@ class LindBladEvolve(torch.nn.Module):
         # Evaluate basis without forcing requires_grad
         self.ctrls_real = evaluate_basis(params_real, t_points, fourier_config)
         self.ctrls_im = evaluate_basis(params_im, t_points, fourier_config)
+
+        self._compute_propagator()
 
         # Calculate metrics
         relative_entropy, energy_average, fidelity_avg = self._get_err()

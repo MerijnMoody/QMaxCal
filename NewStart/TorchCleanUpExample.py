@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from qutip import *
 from TorchCleanUp import create_evolution
 
@@ -16,8 +17,8 @@ def setup_quantum_system():
     Ham_list = [[0.5 * H_sys.full(), 0.5 * H_sys.full()], [a.full(), a.dag().full()]]
     
     # Time evolution parameters
-    n_ts = 45
-    evo_time = 1
+    n_ts = 50
+    evo_time = 0.5
     times = np.linspace(0, evo_time, n_ts)
     
     # Collapse operators
@@ -74,7 +75,7 @@ def main():
     system_params = setup_quantum_system()
     evolution = create_evolution(*system_params)
     # Increased learning rate and iterations
-    result = evolution.optimize(n_iters=200, learning_rate=0.07, constraint=0, fidelity_target=0)
+    result = evolution.optimize(n_iters=20, learning_rate=0.05, constraint=0, fidelity_target=0)
     
     # Plot and print results
     plot_optimization_results(result)

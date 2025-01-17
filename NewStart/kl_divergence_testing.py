@@ -1,9 +1,9 @@
 import torch
-from TorchCleanUp import LindBladEvolve
+from QMaxCal.NewStart.TorchCleanUp2 import LindBladEvolve
 from typing import Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 from TorchCleanUpExample import setup_quantum_system
-from TorchCleanUp import create_evolution
+from QMaxCal.NewStart.TorchCleanUp2 import create_evolution
 from random import sample
 import numpy as np
 

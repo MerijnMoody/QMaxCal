@@ -4,7 +4,7 @@ from qutip import mcsolve, basis, destroy, Qobj, mesolve, expect
 from qutip import *
 import torch
 from TorchCleanUpExample import setup_quantum_system
-from TorchCleanUp import create_evolution
+from QMaxCal.NewStart.TorchCleanUp2 import create_evolution
 from Utils import fidelity
 
 def run_torch_trajectories(evolution, n_samples=100):

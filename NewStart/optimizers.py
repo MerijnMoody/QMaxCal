@@ -93,6 +93,7 @@ class QuantumOptimizer:
             lr=self.learning_rate
         )
 
+        self.system._compute_propagator_ref()
         for i in range(n_iters):
             print(f"\nIteration {i+1}/{n_iters}")
             optimizer.zero_grad()
