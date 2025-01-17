@@ -6,65 +6,6 @@ from torch import nn
 from scipy.linalg import logm
 from scipy.optimize import approx_fprime
 
-class AdamWithFlippedSign(Optimizer):
-    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0):
-        if not 0.0 <= lr:
-            raise ValueError("Invalid learning rate: {}".format(lr))
-        if not 0.0 <= eps:
-            raise ValueError("Invalid epsilon value: {}".format(eps))
-        if not 0.0 <= betas[0] < 1.0:
-            raise ValueError("Invalid beta parameter at index 0: {}".format(betas[0]))
-        if not 0.0 <= betas[1] < 1.0:
-            raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
-        
-        defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
-        super(AdamWithFlippedSign, self).__init__(params, defaults)
-
-    def step(self, closure=None):
-        loss = None
-        if closure is not None:
-            loss = closure()
-
-        for group in self.param_groups:
-            for idx, p in enumerate(group['params']):
-                if p.grad is None:
-                    continue
-                grad = p.grad.data
-                if grad.is_sparse:
-                    raise RuntimeError('Adam does not support sparse gradients, please consider SparseAdam instead')
-
-                state = self.state[p]
-
-                # State initialization
-                if len(state) == 0:
-                    state['step'] = 0
-                    state['exp_avg'] = torch.zeros_like(p.data)
-                    state['exp_avg_sq'] = torch.zeros_like(p.data)
-
-                exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
-                beta1, beta2 = group['betas']
-
-                state['step'] += 1
-
-                if group['weight_decay'] != 0:
-                    grad = grad.add(group['weight_decay'], p.data)
-
-                # Decay the first and second moment running average coefficient
-                exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
-                exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
-
-                denom = exp_avg_sq.sqrt().add_(group['eps'])
-
-                step_size = group['lr'] / (1 - beta1 ** state['step'])
-                
-                if idx == len(group['params']) - 1:
-                    # Flip the sign of the last parameter update
-                    p.data.addcdiv_(-step_size, abs(exp_avg), abs(denom))
-                else:
-                    p.data.addcdiv_(step_size, exp_avg, denom)
-
-        return loss
-
 class BasicGradientDescent(Optimizer):
     def __init__(self, params, lr=1e-3, weight_decay=0):
         if not 0.0 <= lr:
@@ -201,52 +142,233 @@ def _grad_ent(rho, sigma):
     except:
         return 100
 
-def generate_knot_vector(times, degree, num_knots):
-    knots = np.linspace(times[0], times[-1], num_knots)
-    knots = np.concatenate(([times[0]] * degree, knots, [times[-1]] * degree))
-    return torch.tensor(knots, dtype=torch.float32)
-
-def evaluate_bspline_basis(t, degree, knots, i):
+def bspline_basis(t, i, degree, knots):
+    """
+    Compute the value of a B-spline basis function at point t.
+    """
     if degree == 0:
-        return ((knots[i] <= t) & (t < knots[i + 1])).float()
-    else:
-        left_den = knots[i + degree] - knots[i]
-        right_den = knots[i + degree + 1] - knots[i + 1]
-        
-        left = ((t - knots[i]) / left_den) * evaluate_bspline_basis(t, degree - 1, knots, i) if left_den != 0 else torch.zeros_like(t)
-        right = ((knots[i + degree + 1] - t) / right_den) * evaluate_bspline_basis(t, degree - 1, knots, i + 1) if right_den != 0 else torch.zeros_like(t)
-
-        return left + right
+        return torch.where((knots[i] <= t) & (t < knots[i + 1]), 
+                         torch.ones_like(t), 
+                         torch.zeros_like(t))
     
-class BSplineParameterization(nn.Module):
-    def __init__(self, times, num_splines, degree, num_knots):
-        super(BSplineParameterization, self).__init__()
-        self.times = torch.tensor(times, dtype=torch.float32)
-        self.num_splines = num_splines
-        self.degree = degree
-        self.num_knots = num_knots
-        
-        # Generate the knot vector
-        self.knots = generate_knot_vector(times, degree, num_knots)
-        
-        # Initialize the weights for the linear combination of B-splines
-        self.weights = nn.Parameter(torch.randn(num_knots + degree - 1, num_splines))
+    denom1 = knots[i + degree] - knots[i]
+    denom2 = knots[min(i + degree + 1, len(knots) - 1)] - knots[i + 1]
+    
+    term1 = torch.where(denom1 != 0,
+                       (t - knots[i]) / denom1 * bspline_basis(t, i, degree-1, knots),
+                       torch.zeros_like(t))
+    term2 = torch.where(denom2 != 0,
+                       (knots[min(i + degree + 1, len(knots) - 1)] - t) / denom2 * bspline_basis(t, i+1, degree-1, knots),
+                       torch.zeros_like(t))
+    
+    return term1 + term2
 
-    def forward(self):
-        # Evaluate B-spline basis functions at each time point
-        basis_matrix = []
-        for i in range(len(self.knots) - self.degree - 1):
-            basis_matrix.append(evaluate_bspline_basis(self.times, self.degree, self.knots, i))
-        
-        basis_matrix = torch.stack(basis_matrix, dim=-1)  # Shape: (len(times), num_basis)
-        
-        # Compute the B-spline functions as a linear combination of basis functions
-        b_splines = torch.matmul(basis_matrix, self.weights)  # Shape: (len(times), num_splines)
-        
-        # Sum the B-spline functions along the spline dimension
-        b_splines_sum = torch.sum(b_splines, dim=1)  # Shape: (len(times),)
-        
-        return b_splines, b_splines_sum
+def evaluate_bspline_batch(parameters, t, n_ts, T, degree=3):
+    """
+    Evaluate multiple B-spline functions in batch given control point parameters.
+    
+    Args:
+        parameters (torch.Tensor): Control point parameters (n_params, n_ctrls)
+        t (torch.Tensor): Time points at which to evaluate the splines (n_ts,)
+        n_ts (int): Number of time steps
+        T (float): Total time interval
+        degree (int): Degree of the B-spline (default: 3 for cubic splines)
+    
+    Returns:
+        torch.Tensor: Values of the B-spline functions at time t (n_ts, n_ctrls)
+    """
+    n_params, n_ctrls = parameters.shape
+    
+    # Create uniform knot vector with appropriate multiplicity at endpoints
+    n_knots = n_params + degree + 1
+    internal_knots = torch.linspace(0, T, n_knots - 2 * (degree + 1))
+    knots = torch.cat([
+        torch.zeros(degree),
+        internal_knots,
+        T * torch.ones(degree + 1)
+    ])
+    
+    # Normalize time to [0, T]
+    t_norm = t.unsqueeze(-1).repeat(1, n_ctrls)
+    
+    # Evaluate B-spline basis functions
+    basis_vals = torch.stack([bspline_basis(t_norm, i, degree, knots) for i in range(n_params)], dim=1)
+    
+    # Compute batch of B-spline values
+    result = torch.einsum('ij,ji->ij', parameters, basis_vals)
+    
+    return result.transpose(0, 1)
+    """
+    Evaluate multiple B-spline functions in batch given control point parameters.
+    
+    Args:
+        parameters (torch.Tensor): Control point parameters (n_params, n_ctrls)
+        t (torch.Tensor): Time points at which to evaluate the splines (n_ts,)
+        n_ts (int): Number of time steps
+        T (float): Total time interval
+        degree (int): Degree of the B-spline (default: 3 for cubic splines)
+    
+    Returns:
+        torch.Tensor: Values of the B-spline functions at time t (n_ctrls, n_ts)
+    """
+    n_params, n_ctrls = parameters.shape
+    
+    # Create uniform knot vector with appropriate multiplicity at endpoints
+    n_knots = n_params + degree + 1
+    internal_knots = torch.linspace(0, T, n_knots - 2 * (degree + 1))
+    knots = torch.cat([
+        torch.zeros(degree),
+        internal_knots,
+        T * torch.ones(degree + 1)
+    ])
+    
+    # Normalize time to [0, T]
+    t_norm = t.unsqueeze(1).repeat(1, n_ctrls)
+    
+    # Evaluate each basis function and multiply by corresponding parameters
+    result = torch.zeros(n_ctrls, n_ts)
+    for i in range(n_params):
+        basis_val = bspline_basis(t_norm, i, degree, knots)
+        result[i,:] += (parameters[i, :] * basis_val[i,:])
+    
+    return result
+    """
+    Evaluate multiple B-spline functions in batch given control point parameters.
+    
+    Args:
+        parameters (torch.Tensor): Control point parameters (n_ctrls, n_params)
+        t (torch.Tensor): Time points at which to evaluate the splines (n_ts,)
+        n_ts (int): Number of time steps
+        T (float): Total time interval
+        degree (int): Degree of the B-spline (default: 3 for cubic splines)
+    
+    Returns:
+        torch.Tensor: Values of the B-spline functions at time t (n_ctrls, n_ts)
+    """
+    n_params, n_ctrls = parameters.shape
+    
+    # Create uniform knot vector with appropriate multiplicity at endpoints
+    n_knots = n_params + degree + 1
+    internal_knots = torch.linspace(0, T, n_knots - 2 * (degree + 1))
+    knots = torch.cat([
+        torch.zeros(degree),
+        internal_knots,
+        T * torch.ones(degree + 1)
+    ])
+    
+    # Normalize time to [0, T]
+    t_norm = t * (T / (n_ts - 1))
+    
+    # Evaluate each basis function and multiply by corresponding parameters
+    result = torch.zeros(n_ctrls, n_ts)
+    for i in range(n_params):
+        basis_val = bspline_basis(t_norm.unsqueeze(0).repeat(n_ctrls, 1), i, degree, knots)
+        result += parameters[:, i].unsqueeze(-1) * basis_val
+    
+    return result
+    """
+    Evaluate multiple B-spline functions in batch given control point parameters.
+    
+    Args:
+        parameters (torch.Tensor): Control point parameters (n_params, n_ctrls)
+        t (torch.Tensor): Time points at which to evaluate the splines (n_ts,)
+        n_ts (int): Number of time steps
+        T (float): Total time interval
+        degree (int): Degree of the B-spline (default: 3 for cubic splines)
+    
+    Returns:
+        torch.Tensor: Values of the B-spline functions at time t (n_ctrls, n_ts)
+    """
+    n_params, n_ctrls = parameters.shape
+    
+    # Create uniform knot vector with appropriate multiplicity at endpoints
+    n_knots = n_params + degree + 1
+    #raise TypeError(str(n_params))
+    internal_knots = torch.linspace(0, T, n_knots - 2 * (degree + 1))
+    knots = torch.cat([
+        torch.zeros(degree),
+        internal_knots,
+        T * torch.ones(degree + 1)
+    ])
+    
+    # Normalize time to [0, T]
+    t_norm = t * (T / (n_ts - 1))
+    
+    # Evaluate each basis function and multiply by corresponding parameters
+    result = torch.zeros(n_ctrls, n_ts)
+    for i in range(n_params):
+        basis_val = bspline_basis(t_norm, i, degree, knots)
+        result += parameters[:, i].unsqueeze(-1) * basis_val
+    
+    return result
+    """
+    Evaluate multiple B-spline functions in batch given control point parameters.
+    
+    Args:
+        parameters (torch.Tensor): Control point parameters (n_params, n_ctrls)
+        t (torch.Tensor): Time points at which to evaluate the splines (n_ts,)
+        n_ts (int): Number of time steps
+        T (float): Total time interval
+        degree (int): Degree of the B-spline (default: 3 for cubic splines)
+    
+    Returns:
+        torch.Tensor: Values of the B-spline functions at time t (n_ctrls, n_ts)
+    """
+    n_params, n_ctrls = parameters.shape
+    
+    # Create uniform knot vector with appropriate multiplicity at endpoints
+    n_knots = n_params + degree + 1
+    internal_knots = torch.linspace(0, T, n_knots - 2 * degree)
+    knots = torch.cat([
+        torch.zeros(degree),
+        internal_knots,
+        T * torch.ones(degree)
+    ])
+    
+    # Normalize time to [0, T]
+    t_norm = t * (T / (n_ts - 1))
+    
+    # Evaluate each basis function and multiply by corresponding parameters
+    result = torch.zeros(n_ctrls, n_ts)
+    for i in range(n_params):
+        basis_val = bspline_basis(t_norm, i, degree, knots)
+        result += parameters[:, i].unsqueeze(-1) * basis_val
+    
+    return result
+    """
+    Evaluate a B-spline function at time t given control point parameters.
+    
+    Args:
+        parameters (torch.Tensor): Control point parameters (n_params,)
+        t (torch.Tensor): Time point(s) at which to evaluate the spline
+        n_ts (int): Number of time steps
+        T (float): Total time interval
+        degree (int): Degree of the B-spline (default: 3 for cubic splines)
+    
+    Returns:
+        torch.Tensor: Value of the B-spline at time t
+    """
+    n_params = len(parameters)
+    
+    # Create uniform knot vector with appropriate multiplicity at endpoints
+    n_knots = n_params + degree + 1
+    internal_knots = torch.linspace(0, T, n_knots - 2 * degree)
+    knots = torch.cat([
+        torch.zeros(degree),
+        internal_knots,
+        T * torch.ones(degree)
+    ])
+    
+    # Normalize time to [0, T]
+    t_norm = t * (T / (n_ts - 1))
+    
+    # Evaluate each basis function and multiply by corresponding parameter
+    result = torch.zeros_like(t_norm)
+    for i in range(n_params):
+        basis_val = bspline_basis(t_norm, i, degree, knots)
+        result += parameters[i] * basis_val
+    
+    return result
 
 class LindBladEvolve(torch.nn.Module):
     def __init__(self):
@@ -254,6 +376,7 @@ class LindBladEvolve(torch.nn.Module):
         self.time_list = None
         self.dt = None
         self.n_ts = None
+        self.n_params = None
         
         self.init_ctrls = None
         self.initial = None
@@ -280,23 +403,16 @@ class LindBladEvolve(torch.nn.Module):
         
         self.fid_err_list = []
         self.energy_list = []
-        self.prop_evo_ref = None
         
         self.fid_err = None
         self.ent_err = None
         
         self.lam = 0
         self.lam2 = 0
-
-        self.PathDist_ref = []
-        self.PathDist_Evo = []
-        self.PathDistref = None
-        self.PathDistEvo = None
         
         self.fid = 0
         self.jump = 0
         self.energy = 0
-        self.measurements = None
 
     def _get_dyn_gen(self, k):
         dyn_gen = self.dyn_gen
@@ -330,235 +446,14 @@ class LindBladEvolve(torch.nn.Module):
         for k in range(n_ts):
             self.fwd_evo[k + 1] = self.prop[k] @ self.fwd_evo[k]
             self.fwd_evo[k + 1] = self.fwd_evo[k+1]/torch.trace(self.fwd_evo[k+1].view(self.dim, self.dim))
+        
 
-    def _compute_prop_ref_evo(self,k):
-        A = self.dyn_gen * self.dt
-        prop = torch.matrix_exp(A)
-        return prop
-    
-    def _evo_ref(self):
-        n_ts = self.n_ts
-
-        self.prop_evo_ref = [0 for _ in range(n_ts)]
-
-        for k in range(n_ts):
-            self.prop_evo_ref[k] = self._compute_prop_ref_evo(k)
-
-    def _trajectory_probability(self, prop):
-        n_ts = self.n_ts
-        measure_times = self.measurements[1]
-        measure_operators = self.measurements[0]
-        state = self.initial
-        dims = self.dim
-        device = state.device  # Get the device (CPU/GPU) from the state tensor
-        
-        measured_values = []
-        
-        # Perform measurements at prescribed timesteps
-        for i in range(n_ts):
-            state = torch.matmul(prop[i], state)
-            
-            if i in measure_times:
-                # Convert state to operator and get diagonal elements
-                state = state.reshape(self.dim, self.dim)
-                # raise TypeError(state)
-                probs = torch.diagonal(state.real, dim1=0, dim2=1)
-                state = state.reshape(self.dim * self.dim)
-                
-                # Normalize probabilities
-                probs = probs / torch.sum(probs)
-                
-                # Sample from categorical distribution
-                measurement = torch.multinomial(probs, num_samples=1).item()
-                measured_values.append(measurement)
-                
-                # Apply measurement operator
-                state = torch.matmul(torch.from_numpy(measure_operators[measurement]), state)
-        
-        # Calculate final probability
-        probability = torch.trace(state.reshape(self.dim, self.dim)).real
-        
-        return probability, measured_values
-
-    def _path_prob_given_trajectory(self,prop):
-        n_ts = self.n_ts
-        measure_times = self.measurements[1]
-        measure_operators = self.measurements[0]
-        state = self.initial
-        dims = self.dim
-        # raise TypeError(measure_times)
-
-        probability_distribution = torch.from_numpy(np.array([0 for _ in range(2**3)]))
-        for i in range(0,2):
-            for j in range(0,2):
-                for k in range(0,2):
-                    for m in range(n_ts):
-                        state = torch.matmul(prop[i], state)
-                        if m == 1:
-                            state = state.reshape(self.dim, self.dim)
-                            # prob_i = torch.diagonal(state.real, dim1=0, dim2=1)[i]
-                            state = state.reshape(self.dim * self.dim)
-                            state = torch.matmul(torch.from_numpy(measure_operators[i]), state)
-                        if m == 2:
-                            state = state.reshape(self.dim, self.dim)
-                            # prob_j = torch.diagonal(state.real, dim1=0, dim2=1)[j]
-                            state = state.reshape(self.dim * self.dim)
-                            state = torch.matmul(torch.from_numpy(measure_operators[j]), state)
-                        if m == 3:
-                            state = state.reshape(self.dim, self.dim)
-                            # prob_k = torch.diagonal(state.real, dim1=0, dim2=1)[k]
-                            state = state.reshape(self.dim * self.dim)
-                            state = torch.matmul(torch.from_numpy(measure_operators[k]), state)
-                    # probability = prob_i*prob_j*prob_k*torch.trace(state.reshape(self.dim, self.dim)).real
-                    probability = torch.trace(state.reshape(self.dim, self.dim)).real
-                    print(probability)
-                    probability_distribution[self._binary_array_to_integer(np.array([i,j,k]))] = probability
-                    raise TypeError(probability_distribution)
-        total_sum = 0
-        for i in range(len(probability_distribution)):
-            total_sum += probability_distribution[i].item()
-        probability_distribution = probability_distribution/total_sum
-        raise TypeError(probability_distribution)
-        return probability_distribution
-
-    def _path_prob_given_trajectory_claude(self, prop):
-        """
-        Calculate probability distribution for quantum measurements across multiple time steps.
-        
-        Args:
-            prop: Propagator operators
-            
-        Returns:
-            torch.Tensor: Normalized probability distribution
-        """
-        n_ts = self.n_ts
-        measure_times = self.measurements[1]
-        measure_operators = self.measurements[0]
-        dims = self.dim
-        
-        # Initialize probability distribution for all possible measurement outcomes
-        probability_distribution = torch.zeros(2**3)
-        
-        # Iterate through all possible measurement combinations
-        for i in range(2):
-            for j in range(2):
-                for k in range(2):
-                    # Start with initial state for each trajectory
-                    state = self.initial.clone()
-                    
-                    # Initialize individual measurement probabilities
-                    prob_i = prob_j = prob_k = 1.0
-                    
-                    # Evolve state through time steps
-                    for m in range(n_ts):
-                        state = torch.matmul(prop[m], state)
-                        
-                        # Reshape state and apply measurements at appropriate times
-                        if m == 14:
-                            state_matrix = state.reshape(dims, dims)
-                            prob_i = torch.diagonal(state_matrix.real, dim1=0, dim2=1)[i]
-                            state = state.reshape(dims * dims)
-                            state = torch.matmul(torch.from_numpy(measure_operators[i]), state)
-                        
-                        elif m == 30:
-                            state_matrix = state.reshape(dims, dims)
-                            prob_j = torch.diagonal(state_matrix.real, dim1=0, dim2=1)[j]
-                            state = state.reshape(dims * dims)
-                            state = torch.matmul(torch.from_numpy(measure_operators[j]), state)
-                        
-                        elif m == 44:
-                            state_matrix = state.reshape(dims, dims)
-                            prob_k = torch.diagonal(state_matrix.real, dim1=0, dim2=1)[k]
-                            state = state.reshape(dims * dims)
-                            state = torch.matmul(torch.from_numpy(measure_operators[k]), state)
-                    
-                    # Calculate final probability for this trajectory
-                    final_state_matrix = state.reshape(dims, dims)
-                    trajectory_prob = torch.trace(final_state_matrix).real
-                    
-                    # Store probability in distribution
-                    idx = self._binary_array_to_integer(torch.tensor([i, j, k]))
-                    probability_distribution[idx] = trajectory_prob
-        
-        # Normalize probability distribution
-        total_prob = probability_distribution.sum()
-        if total_prob > 0:
-            probability_distribution = probability_distribution / total_prob
-        
-        return probability_distribution   
-        
-    def _binary_array_to_integer(self,binary_array):
-    # Convert to numpy array if it's a list
-        if isinstance(binary_array, list):
-            binary_array = np.array(binary_array)
-    
-    # Validate input
-        if not np.all(np.isin(binary_array, [0, 1])):
-            raise ValueError("Input array must contain only 0s and 1s")
-    
-    # Convert to integer
-        integer_value = 0
-        for bit in binary_array:
-            integer_value = (integer_value << 1) | bit
-    
-        return integer_value
-
-    def _probability_distribution_estimate(self, prop, eps, iters):
-        i = 0
-        total_sum = 0
-        probability_distribution = torch.zeros(2**len(self.measurements[1]))
-        done = []
-        while total_sum < 0.95 and i < iters:
-            i+=1
-            probability, measured_value = self._trajectory_probability(prop)
-            index = self._binary_array_to_integer(measured_value)
-            if index not in done:
-                probability_distribution[index] = probability
-                total_sum += probability
-                done.append(index)
-                
-        for i in range(len(probability_distribution)):
-            if i not in done:
-                probability_distribution[i] = eps
-                #probability_distribution[i] = (1 - total_sum)/(len(probability_distribution)-len(done))
-                #if (torch.round(1 - total_sum,4))/(len(probability_distribution)-len(done)) < 0:
-                #    raise TypeError((1 - total_sum)/(len(probability_distribution)-len(done)))
-
-                #if i >= 100:
-                #raise TypeError(total_sum)
-        
-        total_prob = probability_distribution.sum()
-        if total_prob > 0:
-            probability_distribution = probability_distribution / total_prob
-            
-        return probability_distribution
-
-    # Compute KL
-    def _get_kl_divergence(self, p1, p2):
-        """
-        Calculate Kullback-Leibler divergence between two probability distributions.
-        Args:
-            p1 (array-like): First probability distribution
-            p2 (array-like): Second probability distribution
-        
-        Returns:
-            float: KL divergence value
-        """
-        kl = 0
-        for i in range(len(p1)):
-            # Check that probabilities are not None and greater than 0
-            if p1[i] is not None and p2[i] is not None and p1[i] > 0 and p2[i] > 0:
-                kl += p1[i] * torch.log(p1[i] / p2[i])
-        return kl
-
-        
     def _evo_ctrls(self, ctrls):
         self.ctrls = ctrls.view(self.n_ts , self.n_ctrls)
         self._evo()
 
     def _get_error(self):
         ent_error = self._get_ent_err()
-        # raise TypeError(ent_error)
         fid_error = self._get_fid()
         return [ent_error, fid_error]
 
@@ -566,20 +461,9 @@ class LindBladEvolve(torch.nn.Module):
         ent_error = 0
         ref_evo = self.ref_evo
         n_ts = self.n_ts
-
-        if not self.prop_evo_ref:
-            self._evo_ref()
-        
-        #p1 = self._probability_distribution_estimate(self.prop,1e-8,500)
-        p1 = self._path_prob_given_trajectory_claude(self.prop)
-        self.PathDistEvo = p1
-        #p2 = self._probability_distribution_estimate(self.prop_evo_ref,1e-8,500)
-        p2 = self._path_prob_given_trajectory_claude(self.prop_evo_ref)
-        value = self._get_kl_divergence(p1,p2)
-        self.PathDistref = p2
-        # if value < -0.1:
-        #     raise TypeError(value, p1, p2)
-        return value
+        for i in range(n_ts + 1):
+            ent_error += _grad_ent(self.fwd_evo[i], ref_evo[i])
+        return ent_error
 
     def _get_fid(self):
         evo_final = self.fwd_evo[-1]
@@ -609,10 +493,18 @@ class LindBladEvolve(torch.nn.Module):
         return energy.real
 
     def H(self, args):
-        ctrls_real = args[0]
-        ctrls_im =  args[1]
+        params_real = args[0]
+        params_im = args[1]
         
+        #ctrls_real = args[0]
+        #ctrls_im =  args[1]
+        
+        T = self.time_list[-1]
+        t_points = torch.arange(self.n_ts)
+        ctrls_real = evaluate_bspline_batch(params_real, t_points, self.n_ts, T)
         ctrls_real = ctrls_real.view(self.n_ts, self.n_ctrls)
+        
+        ctrls_im = evaluate_bspline_batch(params_im, t_points, self.n_ts, T)
         ctrls_im = ctrls_im.view(self.n_ts, self.n_ctrls)
         self.ctrls_real = ctrls_real
         self.ctrls_im = ctrls_im
@@ -620,7 +512,6 @@ class LindBladEvolve(torch.nn.Module):
 
         lam = args[-1]
         lam2 = args[-2]
-        
         self.lam = lam
         self.lam2 = lam2
         
@@ -628,10 +519,6 @@ class LindBladEvolve(torch.nn.Module):
         ent_error = self._get_ent_err()
         self.fid_err = fid_error
         self.ent_err = ent_error
-
-        # if ent_error < -0.1:
-        #     raise TypeError('ent_error is negative' + str( print(ent_error)))
-
         
         #jumps = self._get_jump()
         #self.jump = jumps
@@ -647,47 +534,46 @@ class LindBladEvolve(torch.nn.Module):
         cont_error = (torch.linalg.vector_norm(pairwise_diffs_real) 
                       + torch.linalg.vector_norm(pairwise_diffs_im))
         
-        return lam * fid_error * 5 + ent_error * 100 + lam2 * (energy + 5) ** 2 + 10 * (reg_error + 10*cont_error) * 0
+        return lam * fid_error * 3000 + ent_error + lam2 * 100 * (energy + 5) ** 2 + 100 * (reg_error + 10*cont_error)
 
     def optimize(self, n_iters, learning_rate, constraint, fidelity_target):
-        lam = [1.000]
-        lam2 = [1.000]
+        lam = [100.0]
+        lam2 = [50.0]
         
-        ctrls_real = torch.mul(torch.rand((self.n_ts, self.n_ctrls)), 0.5)
-        ctrls_im = torch.mul(torch.rand((self.n_ts, self.n_ctrls)), 0.5)
-    
+        #raise TypeError(self.n_params)
+        params_real = torch.mul(torch.rand((self.n_params, self.n_ctrls)), 1)
+        params_im = torch.mul(torch.rand((self.n_params, self.n_ctrls)), 1)
         
-        if self.init_ctrls:
+        if self.init_ctrls and False:
             lam = self.init_ctrls[-1]
             lam2 = self.init_ctrls[-2]
-            ctrls_real = self.init_ctrls[0]
-            ctrls_im = self.init_ctrls[1]
+            params_real = self.init_ctrls[0]
+            params_im = self.init_ctrls[1]
         
         lam = torch.tensor(lam, requires_grad=True)
         lam2 = torch.tensor(lam2, requires_grad=True)
         
-        ctrls_real = torch.tensor(ctrls_real, requires_grad=True)
-        ctrls_im = torch.tensor(ctrls_im, requires_grad=True)
+        params_real = torch.tensor(params_real, requires_grad=True)
+        params_im = torch.tensor(params_im, requires_grad=True)
         
-        optimizer = BasicGradientDescent([ctrls_real, ctrls_im, lam2, lam], lr=learning_rate)
+        optimizer = BasicGradientDescent([params_real, params_im, lam2, lam], lr=learning_rate)
+
         for i in range(n_iters):
             optimizer.zero_grad()
-            loss = self.H([ctrls_real, ctrls_im, lam2, lam])
+            loss = self.H([params_real, params_im, lam2, lam])
             loss.backward()
             optimizer.step()
             
-            if (i+1) % 1000 == 0 or i == 0:
-                self.fid_grad.append(ctrls_real.grad)
-                self.fid_grad.append(ctrls_im.grad)
-                self.ctrls_list.append(self.ctrls_real.detach())
+            if (i+1) % 2500 == 0 or i == 0:
+                self.fid_grad.append(params_real.grad)
+                self.fid_grad.append(params_im.grad)
+                self.params_list.append(self.params_real.detach())
                 
                 cloned_evo = [evo.clone().detach().numpy() for evo in self.fwd_evo]
                 self.evo_list.append(cloned_evo)
                 self.ent_error_list.append(self.ent_err)
                 self.energy_list.append(self.energy)
                 self.fid_err_list.append(self.fid_err)
-                self.PathDist_Evo.append(self.PathDistEvo)
-                self.PathDist_ref.append(self.PathDistref)
             
             if i == 5000:
                 for g in optimizer.param_groups:
@@ -697,10 +583,10 @@ class LindBladEvolve(torch.nn.Module):
         except: 
             pass
         self.energy = self._get_energy()
-        return [ctrls_real.detach(), ctrls_im.detach(), lam2.detach(), lam.detach()]
+        return [params_real.detach(), params_im.detach(), lam2.detach(), lam.detach()]
 
 
-def create_evolution(dyn_gen, H_con, ham_list, rho0, rhotar, ref_evo, time_list, dim, init_ctrls, measurements):
+def create_evolution(dyn_gen, H_con, ham_list, rho0, rhotar, ref_evo, time_list, dim, init_ctrls, n_params):
     evolution = LindBladEvolve()
     evolution.ham_list = ham_list
     evolution.time_list = time_list
@@ -716,6 +602,6 @@ def create_evolution(dyn_gen, H_con, ham_list, rho0, rhotar, ref_evo, time_list,
     evolution.dim = dim
     evolution.dt = time_list[1] - time_list[0]
     evolution.init_ctrls = init_ctrls 
-    evolution.measurements = measurements
+    evolution.n_params = n_params
     
     return evolution
