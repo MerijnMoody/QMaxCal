@@ -3,6 +3,9 @@ from typing import Optional, List
 import torch
 import numpy as np
 from scipy.linalg import logm
+import os
+from datetime import datetime
+import matplotlib.pyplot as plt
 
 @dataclass
 class BasisConfig:
@@ -86,3 +89,63 @@ def calculate_frob_norm(evo_final: torch.Tensor, target: torch.Tensor) -> torch.
     diff = evo_final.to(dtype=torch.complex128) - target.to(dtype=torch.complex128)
     # Use torch.norm instead of matrix_norm for better gradient propagation
     return torch.norm(diff)
+
+def save_plot(fig, name: str, run_folder: str = None) -> str:
+    """Save a matplotlib figure to a timestamped results folder
+    
+    Args:
+        fig: matplotlib figure to save
+        name: name of the plot file
+        run_folder: optional specific run folder name, if None will create new timestamped folder
+        
+    Returns:
+        Path to the saved plot file
+    """
+    # Create base results directory if it doesn't exist
+    base_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'results')
+    os.makedirs(base_dir, exist_ok=True)
+    
+    # Create timestamped folder if run_folder not provided
+    if run_folder is None:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        run_folder = timestamp
+    
+    # Create full path for this run
+    run_dir = os.path.join(base_dir, run_folder)
+    os.makedirs(run_dir, exist_ok=True)
+    
+    # Save the figure
+    filepath = os.path.join(run_dir, f'{name}.png')
+    fig.savefig(filepath, dpi=300, bbox_inches='tight')
+    
+    return filepath
+
+def get_run_folder() -> str:
+    """Get a timestamped folder name for the current run"""
+    return datetime.now().strftime('%Y%m%d_%H%M%S')
+
+def create_run_directories(run_folder: str) -> dict:
+    """Create standard directory structure for run outputs
+    
+    Args:
+        run_folder: Base run folder (timestamp-based)
+    
+    Returns:
+        Dictionary containing paths to all subdirectories
+    """
+    import os
+    from pathlib import Path
+    
+    # Create directory structure
+    dirs = {
+        'root': run_folder,
+        'figures': os.path.join(run_folder, 'figures'),
+        'parameters': os.path.join(run_folder, 'parameters'),
+        'animations': os.path.join(run_folder, 'animations'),
+    }
+    
+    # Create all directories
+    for dir_path in dirs.values():
+        Path(dir_path).mkdir(parents=True, exist_ok=True)
+    
+    return dirs

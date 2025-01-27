@@ -3,8 +3,7 @@ import matplotlib.pyplot as plt
 from qutip import mcsolve, basis, destroy, Qobj, mesolve, expect
 from qutip import *
 import torch
-from TorchCleanUpExample import setup_quantum_system
-from QMaxCal.NewStart.TorchCleanUp2 import create_evolution
+from TorchCleanUp import create_evolution
 from Utils import fidelity
 
 def run_torch_trajectories(evolution, n_samples=100):
@@ -38,6 +37,9 @@ def run_torch_trajectories(evolution, n_samples=100):
 
 def run_qutip_mcsolve(evolution, n_trajectories=100,):
     """Run quantum trajectories using QuTiP's mcsolve"""
+    # Move import inside function
+    from TorchCleanUpExample import setup_quantum_system
+    
     # Get system parameters from setup function
     L0, H_con, Ham_list, rho0, rhotar, times, glob_dim, _, _, c_ops = setup_quantum_system()
     
@@ -66,6 +68,7 @@ def run_qutip_mcsolve(evolution, n_trajectories=100,):
 def run_qutip_mesolve(times, evolution):
     """Run quantum master equation using QuTiP's mesolve"""
     # Get system parameters from setup function
+    from TorchCleanUpExample import setup_quantum_system
     L0, H_con, Ham_list, rho0, rhotar, times, glob_dim, _, _, c_ops = setup_quantum_system()
     
     # Initial state as density matrix (matching the state used in mcsolve)
@@ -112,6 +115,7 @@ def analyze_jumps(evolution, n_samples=1000, time_bins=50):
 def compare_fidelities():
     """Compare fidelities for different numbers of samples"""
     # Setup systems
+    from TorchCleanUpExample import setup_quantum_system
     system_params = setup_quantum_system()
     evolution = create_evolution(*system_params)
 
@@ -181,6 +185,7 @@ def main():
     # compare_fidelities()
     
     # Setup system and create evolution object
+    from TorchCleanUpExample import setup_quantum_system
     system_params = setup_quantum_system()
     evolution = create_evolution(*system_params)
     

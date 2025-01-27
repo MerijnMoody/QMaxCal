@@ -530,15 +530,35 @@ class LindBladEvolve(torch.nn.Module):
         self.energy = energy_average
 
         # Simple loss
-        loss = relative_entropy
-        
+        loss = 10*relative_entropy + self.lam * fidelity_avg
         return loss
 
     def optimize(self, n_iters: int, learning_rate: float, 
-                constraint: Optional[float], fidelity_target: Optional[float]):
-        optimizer = QuantumOptimizer(self, learning_rate)
+                constraint: Optional[float], fidelity_target: Optional[float],
+                load_params: Optional[str] = None):
+        """Run optimization
+        
+        Args:
+            n_iters: Number of iterations
+            learning_rate: Learning rate for optimization
+            constraint: Optional constraint value
+            fidelity_target: Optional fidelity target
+            load_params: Optional path to saved parameters file
+        """
+        optimizer = QuantumOptimizer(self, learning_rate, load_params)
         result = optimizer.optimize(n_iters, constraint, fidelity_target)
         return result
+
+def create_evolution(*args, load_params: str = None) -> LindBladEvolve:
+    """Create and initialize a LindBladEvolve instance with optional parameter loading
+    
+    Args:
+        *args: Regular system parameters
+        load_params: Optional path to saved parameters file
+    """
+    evolution = LindBladEvolve()
+    # ...existing initialization code...
+    return evolution
 
 def create_evolution(
     dyn_gen: np.ndarray,

@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from qutip import *
-from TorchCleanUp import create_evolution
 
 def setup_quantum_system():
     # System parameters
@@ -17,8 +16,8 @@ def setup_quantum_system():
     Ham_list = [[0.5 * H_sys.full(), 0.5 * H_sys.full()], [a.full(), a.dag().full()]]
     
     # Time evolution parameters
-    n_ts = 50
-    evo_time = 0.5
+    n_ts = 75
+    evo_time = 0.3
     times = np.linspace(0, evo_time, n_ts)
     
     # Collapse operators
@@ -27,7 +26,7 @@ def setup_quantum_system():
     L0 = liouvillian(H_sys, c_ops=c_ops)
     
     # Initial and target states
-    rho0 = operator_to_vector(Qobj([[1,0],[0,0]]))
+    rho0 = operator_to_vector(Qobj([[0.7,0],[0,0.3]]))
     # rho0 = operator_to_vector(Qobj([[1,0],[0,0]]))
     rhotar = operator_to_vector(Qobj([[0.1,0],[0,0.9]]))
     
@@ -35,6 +34,11 @@ def setup_quantum_system():
 
 def plot_optimization_results(result):
     """Plot optimization results"""
+    from Utils import save_plot, get_run_folder  # Add imports
+    
+    # Create run folder
+    run_folder = get_run_folder()
+    
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
     
     iterations = range(len(result.loss_history))
@@ -68,16 +72,34 @@ def plot_optimization_results(result):
     ax4.grid(True)
 
     plt.tight_layout()
+    
+    # Save the plot
+    save_plot(fig, 'optimization_results', run_folder)
     plt.show()
 
 def main():
-    # Setup and run optimization
+    from TorchCleanUp import create_evolution
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--load-params', type=str, help='Path to previously saved parameters')
+    args = parser.parse_args()
+    
+    # Setup system and create evolution object
     system_params = setup_quantum_system()
     evolution = create_evolution(*system_params)
-    # Increased learning rate and iterations
-    result = evolution.optimize(n_iters=20, learning_rate=0.05, constraint=0, fidelity_target=0)
     
-    # Plot and print results
+    # Run optimization with optional parameter loading
+    result = evolution.optimize(
+        n_iters=250,
+        learning_rate=0.05,
+        constraint=0,
+        fidelity_target=0,
+        load_params=args.load_params
+    )
+    
+    # Plot results
     plot_optimization_results(result)
 
 if __name__ == "__main__":

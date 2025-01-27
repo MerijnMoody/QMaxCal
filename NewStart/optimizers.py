@@ -4,6 +4,7 @@ from torch.optim import Optimizer
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 import numpy as np
+import matplotlib.pyplot as plt
 
 @dataclass
 class OptimizationResult:
@@ -59,7 +60,7 @@ class BasicGradientDescent(Optimizer):
 class QuantumOptimizer:
     """Handles quantum control optimization"""
     
-    def __init__(self, system, learning_rate: float = 1e-3):
+    def __init__(self, system, learning_rate: float = 1e-3, load_params: str = None):
         self.system = system
         self.learning_rate = learning_rate
         self.history = defaultdict(list)
@@ -68,9 +69,57 @@ class QuantumOptimizer:
             'real': [],
             'imag': []
         }
+        self.run_folder = None  # Add this line
+        self.load_params = load_params  # Path to saved parameters if using previous results
+        self.directories = None  # Will store paths to all output directories
+
+    def save_final_parameters(self):
+        """Save final parameters to file"""
+        import os
+        import json
+        from datetime import datetime
+        
+        final_params = {
+            'real': self.parameter_history['real'][-1].detach().numpy().tolist(),
+            'imag': self.parameter_history['imag'][-1].detach().numpy().tolist(),
+            'timestamp': datetime.now().strftime('%Y%m%d_%H%M%S'),
+            'fidelity': self.history['fidelity'][-1],
+            'loss': self.history['loss'][-1]
+        }
+        
+        # Save parameters using the parameters directory
+        save_path = os.path.join(self.directories['parameters'], 'final_parameters.json')
+        with open(save_path, 'w') as f:
+            json.dump(final_params, f, indent=4)
+        print(f"Final parameters saved to: {save_path}")
+
+    def load_parameters(self, params_path: str) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Load parameters from file"""
+        import json
+        
+        with open(params_path, 'r') as f:
+            params = json.load(f)
+        
+        params_real = torch.tensor(params['real'], requires_grad=True)
+        params_imag = torch.tensor(params['imag'], requires_grad=True)
+        
+        print(f"Loaded parameters from previous run:")
+        print(f"Timestamp: {params['timestamp']}")
+        print(f"Final fidelity: {params['fidelity']}")
+        print(f"Final loss: {params['loss']}")
+        
+        return params_real, params_imag
 
     def initialize_parameters(self, n_params: int, n_ctrls: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """Initialize control parameters"""
+        if self.load_params:
+            try:
+                return self.load_parameters(self.load_params)
+            except Exception as e:
+                print(f"Error loading parameters: {e}")
+                print("Falling back to random initialization")
+        
+        # Original random initialization
         params_real = torch.mul(torch.rand((n_params, n_ctrls)), 1.0)
         params_im = torch.mul(torch.rand((n_params, n_ctrls)), 1.0)
         return params_real.requires_grad_(True), params_im.requires_grad_(True)
@@ -78,6 +127,12 @@ class QuantumOptimizer:
     def optimize(self, n_iters: int, constraint: Optional[float] = None, 
                 fidelity_target: Optional[float] = None) -> OptimizationResult:
         """Run optimization loop"""
+        from Utils import get_run_folder, create_run_directories  # Add this import
+        
+        # Create run folder and directory structure
+        self.run_folder = get_run_folder()
+        self.directories = create_run_directories(self.run_folder)
+        
         # Initialize parameters - they already have requires_grad=True from initialize_parameters
         params_real, params_im = self.initialize_parameters(
             self.system.n_params, 
@@ -119,6 +174,11 @@ class QuantumOptimizer:
         # Add parameter evolution plot
         self.plot_parameter_evolution()
 
+        # Add heatmap visualization after optimization
+        self.plot_parameter_heatmaps()
+        
+        # Save final parameters after optimization
+        self.save_final_parameters()
         
         return OptimizationResult(
             controls_real=self.system.ctrls_real.detach(),
@@ -133,8 +193,47 @@ class QuantumOptimizer:
 
     def plot_optimization_trajectories(self):
         """Plot trajectories from different optimization steps"""
-        import matplotlib.pyplot as plt
-        
+        from Utils import save_plot  # Add this import
+        # Helper function to run quantum master equation
+        def run_qutip_mesolve(times, evolution, ref=False):
+            """Run quantum master equation using QuTiP's mesolve"""
+            from qutip import mesolve, Qobj
+            from TorchCleanUpExample import setup_quantum_system
+            
+            # Get system parameters from setup function
+            L0, H_con, Ham_list, rho0, rhotar, times, glob_dim, _, _, c_ops = setup_quantum_system()
+            
+            # Initial state as density matrix
+            rho0 = Qobj([[0.7,0],[0,0.3]])
+            
+            if ref:
+                # Reference evolution (no controls)
+                H = [Qobj(2*Ham_list[0][0])]
+            else:
+                # Convert control parameters to numpy arrays
+                ctrls_real = evolution.ctrls_real.detach().numpy()
+                ctrls_im = evolution.ctrls_im.detach().numpy()
+                
+                # Fix: Properly scale the time index
+                dt = times[1] - times[0]
+                
+                def get_control_real(t, args):
+                    idx = min(int(t/dt), len(ctrls_real)-1)
+                    return ctrls_real[idx][0]
+                
+                def get_control_imag(t, args):
+                    idx = min(int(t/dt), len(ctrls_im)-1)
+                    return ctrls_im[idx][0]*1j
+                
+                # Controlled evolution
+                H = [Qobj(2*Ham_list[0][0]), 
+                     [Qobj(Ham_list[1][0] + Ham_list[1][1]), get_control_real], 
+                     [Qobj(Ham_list[1][0] - Ham_list[1][1]), get_control_imag]]
+            
+            result = mesolve(H, rho0, times, c_ops)
+            populations = [state[1][1].real for state in result.states]
+            return np.array(populations)
+
         # Create figure and axis objects
         fig, ax = plt.subplots(figsize=(12, 8))
         
@@ -144,6 +243,8 @@ class QuantumOptimizer:
         
         # Create color gradient from red to blue
         colors = plt.cm.RdYlBu(np.linspace(0, 1, n_trajectories))
+        
+        times = trajectories[0]['time']  # Use same time points as trajectories
         
         # Plot each trajectory
         for i, traj in enumerate(trajectories):
@@ -159,6 +260,14 @@ class QuantumOptimizer:
                     alpha=0.2
                 )
 
+         # Get reference evolution (no controls)
+        ref_populations = run_qutip_mesolve(times, self.system, ref=True)
+        ax.plot(times, ref_populations, 'k:', label='Reference (no controls)', linewidth=2)
+        
+        # Get controlled evolution
+        mesolve_populations = run_qutip_mesolve(times, self.system, ref=False)
+        ax.plot(times, mesolve_populations, 'k--', label='Controlled evolution', linewidth=2)
+
         ax.set_xlabel('Time')
         ax.set_ylabel('Excited state population')
         ax.set_title('Evolution of Quantum Trajectories During Optimization')
@@ -172,10 +281,14 @@ class QuantumOptimizer:
         plt.colorbar(sm, ax=ax, label='Optimization iteration')
         
         plt.tight_layout()
+        
+        # After creating the plot, save it
+        save_plot(fig, 'optimization_trajectories', self.directories['figures'])
         plt.show()
 
     def plot_parameter_evolution(self):
         """Plot the evolution of parameters during optimization"""
+        from Utils import save_plot  # Add this import
         import matplotlib.pyplot as plt
         
         n_iters = len(self.parameter_history['real'])
@@ -204,5 +317,103 @@ class QuantumOptimizer:
         ax2.grid(True)
         
         plt.tight_layout()
+        
+        # After creating the plot, save it
+        save_plot(fig, 'parameter_evolution', self.directories['figures'])
         plt.show()
-        plt.show()
+
+    def plot_parameter_heatmaps(self):
+        """Create animated visualization of control functions"""
+        from Utils import save_plot
+        import matplotlib.pyplot as plt
+        import matplotlib.animation as animation
+        from Utils import evaluate_basis, BasisConfig
+        import os
+        from pathlib import Path
+
+        # Create a figures subdirectory in the run folder
+        figures_dir = os.path.join(self.run_folder, 'figures')
+        Path(figures_dir).mkdir(parents=True, exist_ok=True)
+
+        # Create animation of control functions
+        fig_anim, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+        fig_anim.suptitle('', fontsize=14, y=0.98)  # Empty title for step counter
+        
+        # Get time points and setup basis configuration
+        T = self.system.time_list[-1]
+        t_points = torch.linspace(0, T, 100)
+        
+        # Setup basis configuration and calculate all control functions
+        fourier_config = BasisConfig(
+            type='fourier',
+            degree=self.parameter_history['real'][0].shape[0]-1,
+            n_params=self.parameter_history['real'][0].shape[0],
+            period=T
+        )
+
+        # Pre-calculate all control functions for better performance
+        all_ctrl_real = []
+        all_ctrl_imag = []
+        for params_real, params_imag in zip(self.parameter_history['real'], 
+                                          self.parameter_history['imag']):
+            ctrl_real = evaluate_basis(params_real, t_points, fourier_config)
+            ctrl_imag = evaluate_basis(params_imag, t_points, fourier_config)
+            all_ctrl_real.append(ctrl_real[:, 0])
+            all_ctrl_imag.append(ctrl_imag[:, 0])
+
+        # Calculate global y limits
+        all_values = torch.cat([torch.cat(all_ctrl_real), torch.cat(all_ctrl_imag)])
+        y_min, y_max = all_values.min().item(), all_values.max().item()
+        y_padding = (y_max - y_min) * 0.1
+        y_min -= y_padding
+        y_max += y_padding
+
+        # Initialize plots
+        line1, = ax1.plot([], [], 'b-', linewidth=2)
+        line2, = ax2.plot([], [], 'r-', linewidth=2)
+
+        # Set up axes
+        for ax in [ax1, ax2]:
+            ax.set_xlim(0, T)
+            ax.set_ylim(y_min, y_max)
+            ax.grid(True)
+            ax.set_xlabel('Time')
+            ax.set_ylabel('Amplitude')
+
+        ax1.set_title('Real Control')
+        ax2.set_title('Imaginary Control')
+        
+        plt.tight_layout()
+
+        def init():
+            line1.set_data([], [])
+            line2.set_data([], [])
+            fig_anim.suptitle('')
+            return line1, line2
+
+        def update(frame):
+            line1.set_data(t_points, all_ctrl_real[frame])
+            line2.set_data(t_points, all_ctrl_imag[frame])
+            fig_anim.suptitle(f'Optimization Step: {frame+1}/{len(self.parameter_history["real"])}',
+                            fontsize=11, y=1)
+            return line1, line2
+
+        # Create and save animation
+        anim = animation.FuncAnimation(
+            fig_anim, update,
+            init_func=init,
+            frames=len(self.parameter_history['real']),
+            interval=200,
+            blit=False
+        )
+        
+        try:
+            # Save animation to animations directory
+            save_path = os.path.join(self.directories['animations'], 'control_evolution.gif')
+            anim.save(save_path, writer='pillow', fps=5)
+            print(f"Animation saved to: {save_path}")
+            plt.show()
+        except Exception as e:
+            print(f"Error saving animation: {e}")
+        finally:
+            plt.close(fig_anim)
