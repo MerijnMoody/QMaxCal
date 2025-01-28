@@ -120,8 +120,8 @@ class QuantumOptimizer:
                 print("Falling back to random initialization")
         
         # Original random initialization
-        params_real = torch.mul(torch.rand((n_params, n_ctrls)), 1.0)
-        params_im = torch.mul(torch.rand((n_params, n_ctrls)), 1.0)
+        params_real = torch.mul(torch.rand((n_params, n_ctrls)), 0.1)
+        params_im = torch.mul(torch.rand((n_params, n_ctrls)), 0.1)
         return params_real.requires_grad_(True), params_im.requires_grad_(True)
 
     def optimize(self, n_iters: int, constraint: Optional[float] = None, 
@@ -204,7 +204,7 @@ class QuantumOptimizer:
             L0, H_con, Ham_list, rho0, rhotar, times, glob_dim, _, _, c_ops = setup_quantum_system()
             
             # Initial state as density matrix
-            rho0 = Qobj([[0.7,0],[0,0.3]])
+            rho0 = Qobj([[1,0],[0,0]])
             
             if ref:
                 # Reference evolution (no controls)
@@ -392,9 +392,9 @@ class QuantumOptimizer:
             return line1, line2
 
         def update(frame):
-            line1.set_data(t_points, all_ctrl_real[frame])
-            line2.set_data(t_points, all_ctrl_imag[frame])
-            fig_anim.suptitle(f'Optimization Step: {frame+1}/{len(self.parameter_history["real"])}',
+            line1.set_data(t_points, all_ctrl_real[frame*5])
+            line2.set_data(t_points, all_ctrl_imag[frame*5])
+            fig_anim.suptitle(f'Optimization Step: {frame*5+1}/{len(self.parameter_history["real"])}',
                             fontsize=11, y=1)
             return line1, line2
 
@@ -402,7 +402,7 @@ class QuantumOptimizer:
         anim = animation.FuncAnimation(
             fig_anim, update,
             init_func=init,
-            frames=len(self.parameter_history['real']),
+            frames=int(len(self.parameter_history['real'])/5),
             interval=200,
             blit=False
         )

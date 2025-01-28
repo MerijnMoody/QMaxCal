@@ -35,7 +35,7 @@ def fidelity(rho: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
     sqrt_interm_matrix = matrix_sqrtm(interm_matrix)
     return torch.abs(torch.norm(torch.trace(sqrt_interm_matrix)))
 
-def fourier_basis(t: torch.Tensor, i: int, degree: int, period: float = 1.0) -> torch.Tensor:
+def fourier_basis(t: torch.Tensor, i: int, period: float = 1.0) -> torch.Tensor:
     """Evaluate Fourier basis function"""
     if i == 0:
         return torch.ones_like(t)
@@ -68,10 +68,10 @@ def evaluate_basis(parameters: torch.Tensor, t: torch.Tensor, config: BasisConfi
     
     for i in range(config.n_params):
         if config.type == 'fourier':
-            basis_val = fourier_basis(t_norm, i, config.degree, config.period)
+            basis_val = fourier_basis(t_norm, i, 1)
         elif config.type == 'bspline':
             if 0 <= i < len(config.knots) - config.degree - 1:
-                basis_val = bspline_basis(t_norm, i, config.degree, config.knots)
+                basis_val = bspline_basis(t_norm, i, config.knots)
             else:
                 raise ValueError(f"Invalid basis function index: {i}")
         basis_vals.append(basis_val)

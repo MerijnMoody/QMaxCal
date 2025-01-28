@@ -252,7 +252,7 @@ class LindBladEvolve(torch.nn.Module):
             
             # No-jump evolution probability
             old_current_state = current_state
-            propagator = torch.matrix_exp(-1j * dt * H_eff)
+            propagator = self.propagator_ref[i] if ref else self.propagator[i]
             current_state = propagator @ current_state
             no_jump_prob = (current_state.conj() @ current_state).real
             
@@ -480,7 +480,7 @@ class LindBladEvolve(torch.nn.Module):
         print("\nEntering _get_err")
         # Update to match actual return values
         evolution, p1, energy_average, fidelity_avg = self._probability_distribution_estimate(
-            ref=False, max_iters=150
+            ref=False, max_iters=500
         )
         print(f"After estimate - fidelity requires_grad: {fidelity_avg.requires_grad}")
         
@@ -490,7 +490,7 @@ class LindBladEvolve(torch.nn.Module):
         # Calculate reference evolution if needed
         if self.ref_evo is None:
             ref_evolution, p2, energy_ref_avg, _ = self._probability_distribution_estimate(
-                ref=True, max_iters=200
+                ref=True, max_iters=500
             )
             self.ref_evo = ref_evolution
             self.ref_prob_dist = p2
@@ -530,7 +530,7 @@ class LindBladEvolve(torch.nn.Module):
         self.energy = energy_average
 
         # Simple loss
-        loss = 10*relative_entropy + self.lam * fidelity_avg
+        loss = relative_entropy + self.lam * fidelity_avg
         return loss
 
     def optimize(self, n_iters: int, learning_rate: float, 
@@ -548,17 +548,6 @@ class LindBladEvolve(torch.nn.Module):
         optimizer = QuantumOptimizer(self, learning_rate, load_params)
         result = optimizer.optimize(n_iters, constraint, fidelity_target)
         return result
-
-def create_evolution(*args, load_params: str = None) -> LindBladEvolve:
-    """Create and initialize a LindBladEvolve instance with optional parameter loading
-    
-    Args:
-        *args: Regular system parameters
-        load_params: Optional path to saved parameters file
-    """
-    evolution = LindBladEvolve()
-    # ...existing initialization code...
-    return evolution
 
 def create_evolution(
     dyn_gen: np.ndarray,

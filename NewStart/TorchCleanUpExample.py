@@ -26,8 +26,8 @@ def setup_quantum_system():
     L0 = liouvillian(H_sys, c_ops=c_ops)
     
     # Initial and target states
-    rho0 = operator_to_vector(Qobj([[0.7,0],[0,0.3]]))
-    # rho0 = operator_to_vector(Qobj([[1,0],[0,0]]))
+    #rho0 = operator_to_vector(Qobj([[0.7,0],[0,0.3]]))
+    rho0 = operator_to_vector(Qobj([[1,0],[0,0]]))
     rhotar = operator_to_vector(Qobj([[0.1,0],[0,0.9]]))
     
     return L0, H_con, Ham_list, rho0, rhotar, times[:-1], glob_dim, None, 10, c_ops
@@ -92,7 +92,7 @@ def main():
     
     # Run optimization with optional parameter loading
     result = evolution.optimize(
-        n_iters=250,
+        n_iters=1000,
         learning_rate=0.05,
         constraint=0,
         fidelity_target=0,
