@@ -17,6 +17,7 @@ class OptimizationResult:
     entropy_history: List[float]
     parameter_history_real: List[torch.Tensor]  # Add these new fields
     parameter_history_imag: List[torch.Tensor]
+    forbidden_occupation_history: List[float]  # Add this field
 
 class BasicGradientDescent(Optimizer):
     def __init__(self, params, lr=1e-3, weight_decay=0):
@@ -120,8 +121,8 @@ class QuantumOptimizer:
                 print("Falling back to random initialization")
         
         # Original random initialization
-        params_real = torch.mul(torch.rand((n_params, n_ctrls)), 0.1)
-        params_im = torch.mul(torch.rand((n_params, n_ctrls)), 0.1)
+        params_real = torch.mul(torch.rand((n_params, n_ctrls)), 4)
+        params_im = torch.mul(torch.rand((n_params, n_ctrls)), 4)
         return params_real.requires_grad_(True), params_im.requires_grad_(True)
 
     def optimize(self, n_iters: int, constraint: Optional[float] = None, 
@@ -164,21 +165,23 @@ class QuantumOptimizer:
             self.history['fidelity'].append(self.system.fidelity.detach().item())
             self.history['energy'].append(self.system.energy.detach().item())
             self.history['entropy'].append(self.system.relative_entropy.detach().item())
+            # Add forbidden occupation to history
+            self.history['forbidden_occupation'].append(self.system.forbidden_occupation.detach().item())
 
         # Final evaluation
         final_controls = self.system._loss_function([params_real, params_im, lam, lam2])
         
-        # After optimization loop, plot all trajectories
-        self.plot_optimization_trajectories()
+        # # After optimization loop, plot all trajectories
+        # self.plot_optimization_trajectories()
         
-        # Add parameter evolution plot
-        self.plot_parameter_evolution()
+        # # Add parameter evolution plot
+        # self.plot_parameter_evolution()
 
-        # Add heatmap visualization after optimization
-        self.plot_parameter_heatmaps()
+        # # Add heatmap visualization after optimization
+        # self.plot_parameter_heatmaps()
         
-        # Save final parameters after optimization
-        self.save_final_parameters()
+        # # Save final parameters after optimization
+        # self.save_final_parameters()
         
         return OptimizationResult(
             controls_real=self.system.ctrls_real.detach(),
@@ -188,7 +191,8 @@ class QuantumOptimizer:
             energy_history=self.history['energy'],
             entropy_history=self.history['entropy'],
             parameter_history_real=self.parameter_history['real'],
-            parameter_history_imag=self.parameter_history['imag']
+            parameter_history_imag=self.parameter_history['imag'],
+            forbidden_occupation_history=self.history['forbidden_occupation']  # Add this
         )
 
     def plot_optimization_trajectories(self):
