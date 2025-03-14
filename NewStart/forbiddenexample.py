@@ -2,6 +2,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from qutip import *
+import os
+from datetime import datetime
+import json
 
 def setup_quantum_system():
     # System parameters
@@ -31,7 +34,7 @@ def setup_quantum_system():
     
     return L0, H_con, Ham_list, rho0, rhotar, times[:-1], glob_dim, None, 10, c_ops
 
-def plot_populations(evolution):
+def plot_populations(evolution, save_dir=None):
     """Plot populations with color gradient for iterations"""
     fig, ax = plt.subplots(figsize=(12, 8))
     
@@ -71,9 +74,14 @@ def plot_populations(evolution):
     plt.colorbar(sm, ax=ax, label='Optimization iteration')
     
     plt.tight_layout()
+    
+    # Save the figure if directory is provided
+    if save_dir:
+        plt.savefig(os.path.join(save_dir, 'population_evolution.png'), dpi=300, bbox_inches='tight')
+    
     plt.show()
 
-def plot_optimization_results(result):
+def plot_optimization_results(result, save_dir=None):
     """Plot optimization results"""
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
     
@@ -108,9 +116,14 @@ def plot_optimization_results(result):
     ax4.grid(True)
 
     plt.tight_layout()
+    
+    # Save the figure if directory is provided
+    if save_dir:
+        plt.savefig(os.path.join(save_dir, 'optimization_metrics.png'), dpi=300, bbox_inches='tight')
+    
     plt.show()
 
-def plot_parameter_evolution(result):
+def plot_parameter_evolution(result, save_dir=None):
     """Plot the evolution of control parameters"""
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
     
@@ -135,10 +148,68 @@ def plot_parameter_evolution(result):
     ax2.grid(True)
     
     plt.tight_layout()
+    
+    # Save the figure if directory is provided
+    if save_dir:
+        plt.savefig(os.path.join(save_dir, 'parameter_evolution.png'), dpi=300, bbox_inches='tight')
+    
     plt.show()
+
+def save_run_parameters(evolution, result, save_dir):
+    """Save run parameters, results, and control parameters to files"""
+    # Basic run info for JSON
+    params_dict = {
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'system_dimension': evolution.dim,
+        'time_steps': len(evolution.time_list),
+        'max_time': evolution.time_list[-1].item(),
+        'final_metrics': {
+            'loss': result.loss_history[-1],
+            'fidelity': result.fidelity_history[-1],
+            'entropy': result.entropy_history[-1],
+            'forbidden_occupation': result.forbidden_occupation_history[-1]
+        }
+    }
+    
+    # Save evolution history
+    params_dict['history'] = {
+        'loss': result.loss_history,
+        'fidelity': result.fidelity_history,
+        'entropy': result.entropy_history,
+        'forbidden_occupation': result.forbidden_occupation_history
+    }
+    
+    # Save to JSON
+    with open(os.path.join(save_dir, 'run_parameters.json'), 'w') as f:
+        json.dump(params_dict, f, indent=4)
+    
+    # Save final control parameters as NumPy arrays
+    if hasattr(result, 'parameter_history_real') and len(result.parameter_history_real) > 0:
+        # Save Fourier parameters
+        final_real_params = result.parameter_history_real[-1].detach().cpu().numpy()
+        final_imag_params = result.parameter_history_imag[-1].detach().cpu().numpy()
+        
+        np.save(os.path.join(save_dir, 'final_real_params.npy'), final_real_params)
+        np.save(os.path.join(save_dir, 'final_imag_params.npy'), final_imag_params)
+        
+        # Also save in human-readable format
+        with open(os.path.join(save_dir, 'final_parameters.txt'), 'w') as f:
+            f.write("Final Real Parameters:\n")
+            f.write(str(final_real_params))
+            f.write("\n\nFinal Imaginary Parameters:\n")
+            f.write(str(final_imag_params))
+        
+        print(f"Saved final control parameters to {save_dir}")
 
 def main():
     from TorchCleanUpForbidden import create_evolution
+    
+    # Create run directory with timestamp
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    save_dir = os.path.join('/Users/zier/Documents/Projects/QMaxCal/results', timestamp)
+    os.makedirs(save_dir, exist_ok=True)
+    print(f"Saving run results to: {save_dir}")
+    
     # Setup system and create evolution object
     system_params = setup_quantum_system()
     evolution = create_evolution(*system_params)
@@ -150,17 +221,36 @@ def main():
 
     # Run optimization
     result = evolution.optimize(
-        n_iters=100,
-        learning_rate=0.05,
+        n_iters=10,  # Increased for better results
+        learning_rate=0.1,  # Higher learning rate
         constraint=0,
         fidelity_target=0,
         load_params=None
     )
 
-    # Plot all results
-    plot_populations(evolution)
-    plot_optimization_results(result)
-    plot_parameter_evolution(result)
+    # Save run parameters and results
+    save_run_parameters(evolution, result, save_dir)
+    
+    # Generate and save plots
+    print("Generating and saving plots...")
+    
+    # Save optimization metrics
+    plot_optimization_results(result, save_dir)
+    
+    # Save parameter evolution
+    plot_parameter_evolution(result, save_dir)
+    
+    # Save population evolution
+    plot_populations(evolution, save_dir)
+    
+    # Print final metrics
+    print(f"\nFinal metrics:")
+    print(f"Loss: {result.loss_history[-1]:.6f}")
+    print(f"Fidelity: {result.fidelity_history[-1]:.6f}")
+    print(f"Forbidden occupation: {result.forbidden_occupation_history[-1]:.6f}")
+    print(f"Entropy: {result.entropy_history[-1]:.6f}")
+    
+    print(f"\nAll results saved to: {save_dir}")
 
 if __name__ == "__main__":
     main()
