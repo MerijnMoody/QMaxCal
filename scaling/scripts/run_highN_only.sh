@@ -13,11 +13,13 @@
 # ~7 GB of dense Hamiltonian/Lindblad constants at N=12.
 
 PYTHON=~/qmaxcal_venv/bin/python
-cd /home/mmoody/qmaxcal_paper
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+while [ ! -f "$ROOT/train_qmaxcal.py" ] && [ "$ROOT" != "/" ]; do ROOT="$(dirname "$ROOT")"; done
+cd "$ROOT"
 
 ERNST_OUT=scaling/results/highN_only.json $PYTHON -u - <<'EOF'
 import os, sys, json, time, gc
-sys.path.insert(0, '/home/mmoody/qmaxcal_paper/scaling/src')
+sys.path.insert(0, '<repo-root>/scaling/src')
 
 import numpy as np
 import jax

@@ -24,7 +24,7 @@ PULSE_AMPLITUDE = 1.0
 N_TRAJS = 256
 N_TIME_STEPS = 2048
 
-OUT = '/home/mmoody/qmaxcal_paper/scaling/results/em_scaling.json'
+OUT = '<repo-root>/scaling/results/em_scaling.json'
 
 
 def gpu_mem_mib():

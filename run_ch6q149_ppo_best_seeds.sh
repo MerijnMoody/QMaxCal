@@ -15,7 +15,7 @@
 # Seed 0 already exists; this fills out seeds 1 and 2 for variance.
 
 PYTHON=~/qmaxcal_venv/bin/python
-cd /home/mmoody/qmaxcal_paper
+cd "$(dirname "$(realpath "$0")")"
 
 SDS=(1 2)
 SD=${SDS[$SLURM_ARRAY_TASK_ID]}

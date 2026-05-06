@@ -17,7 +17,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-ROOT = '/home/mmoody/qmaxcal_paper'
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 QMAX_BASE       = f'{ROOT}/results/chain6/qmaxcal/variance_q14_q9_flw0.02'
 PPO_BASE        = f'{ROOT}/results/chain6/ppo/q14_q9_sm0.001_ks4.0'

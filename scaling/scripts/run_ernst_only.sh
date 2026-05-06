@@ -12,7 +12,9 @@
 # Reports wall-clock and peak GPU memory per N; stops at first failure.
 
 PYTHON=~/qmaxcal_venv/bin/python
-cd /home/mmoody/qmaxcal_paper
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+while [ ! -f "$ROOT/train_qmaxcal.py" ] && [ "$ROOT" != "/" ]; do ROOT="$(dirname "$ROOT")"; done
+cd "$ROOT"
 
 ERNST_OUT=scaling/results/ernst_only_mem256.json $PYTHON -u scaling/src/bench_ernst_only.py
 

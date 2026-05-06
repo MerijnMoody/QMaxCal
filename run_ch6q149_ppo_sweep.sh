@@ -23,7 +23,7 @@
 #   3:  (0.001, 4)
 
 PYTHON=~/qmaxcal_venv/bin/python
-cd /home/mmoody/qmaxcal_paper
+cd "$(dirname "$(realpath "$0")")"
 
 SMS=(0.0   0.0   0.001 0.001)
 KSS=(2.0   4.0   2.0   4.0  )

@@ -10,7 +10,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-ROOT = '/home/mmoody/qmaxcal_paper'
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE_COLOR = ['steelblue', 'crimson', 'darkorange', 'seagreen']
 
 

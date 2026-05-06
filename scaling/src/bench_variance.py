@@ -42,7 +42,7 @@ def parse_args():
     p.add_argument('--n-trajs', type=int, nargs='+', default=None)
     p.add_argument('--n-reseeds', type=int, default=None)
     p.add_argument('--out', type=str,
-                   default='/home/mmoody/qmaxcal_paper/scaling/results/variance.json')
+                   default='<repo-root>/scaling/results/variance.json')
     return p.parse_args()
 
 

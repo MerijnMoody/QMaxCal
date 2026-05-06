@@ -5,7 +5,7 @@ adds log-fidelity, Blackman-normalized linear area, and second-derivative
 smoothness penalty (the reward shape Ernst actually uses in his paper).
 
 Run:
-    cd /home/zmensch/MaxCal-VQE/reference/RL4qcWpc
+    cd <repo-root>/Ernst
     python -m rl_working.train_stirap_3level_matched \
         --pulse_area_penalty 0.1 --smoothness_penalty_env 0.1 --log_fidelity 1
 """

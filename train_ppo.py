@@ -21,7 +21,6 @@ from typing import Any, Dict, Optional, Tuple
 # Both sys.paths required: Ernst/ for ppo + envs, template/ for systems/
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, THIS_DIR)
-sys.path.insert(0, '/home/mmoody/qmaxcal_paper/Ernst')
 
 import chex
 import jax

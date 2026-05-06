@@ -6,7 +6,7 @@ smoothness_penalty_env/det, log_fidelity, x_penalty, fid_factor) as CLI so a
 pap sweep matches the 3-level drivers.
 
 Run:
-    cd /home/zmensch/MaxCal-VQE/reference/RL4qcWpc
+    cd <repo-root>/Ernst
     python -m rl_working.train_stirap5 --pulse_area_penalty 0.1 --seed 0
 """
 from __future__ import annotations

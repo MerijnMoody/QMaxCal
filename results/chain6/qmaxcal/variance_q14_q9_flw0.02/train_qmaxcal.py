@@ -8,7 +8,6 @@ Example:
         --method exp_split --output_dir results/test
 """
 import os, sys, pickle, argparse, importlib
-sys.path.insert(0, '/home/mmoody/qmaxcal_paper')
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import jax

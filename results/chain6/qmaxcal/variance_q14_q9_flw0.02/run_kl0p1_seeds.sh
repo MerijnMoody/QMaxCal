@@ -13,7 +13,7 @@
 # Seed 0 already exists from job 22439590.
 
 PYTHON=~/qmaxcal_venv/bin/python
-TEMPLATE=/home/mmoody/qmaxcal_paper/experiments/template
+TEMPLATE=<repo-root>/experiments/template
 VRDIR=$TEMPLATE/results/chain6/qmaxcal/variance_q14_q9_flw0.02
 
 export PYTHONPATH=$TEMPLATE:$PYTHONPATH

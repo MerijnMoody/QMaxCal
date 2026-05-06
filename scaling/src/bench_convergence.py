@@ -47,7 +47,7 @@ def parse_args():
     p.add_argument('--n-trajs', type=int, default=None)
     p.add_argument('--n-reseeds', type=int, default=None)
     p.add_argument('--out', type=str,
-                   default='/home/mmoody/qmaxcal_paper/scaling/results/convergence.json')
+                   default='<repo-root>/scaling/results/convergence.json')
     return p.parse_args()
 
 

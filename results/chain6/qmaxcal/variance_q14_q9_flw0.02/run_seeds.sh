@@ -26,7 +26,7 @@
 #   6: (16, 0,  2)   KL       seed 2
 
 PYTHON=~/qmaxcal_venv/bin/python
-TEMPLATE=/home/mmoody/qmaxcal_paper/experiments/template
+TEMPLATE=<repo-root>/experiments/template
 VRDIR=$TEMPLATE/results/chain6/qmaxcal/variance_q14_q9_flw0.02
 
 # Frozen train script lives in this directory; need template on PYTHONPATH
