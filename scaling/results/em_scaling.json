@@ -1,0 +1,110 @@
+[
+  {
+    "N": 4,
+    "dim": 16,
+    "method": "euler_maruyama",
+    "n_trajs": 256,
+    "n_time_steps": 2048,
+    "t_first_s": 2.1040375189622864,
+    "t_cached_s": 0.08574460609816015,
+    "gpu_mem_mib": 32.035400390625,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 4,
+    "dim": 16,
+    "method": "exp_split",
+    "n_trajs": 256,
+    "n_time_steps": 2048,
+    "t_first_s": 4.5099279310088605,
+    "t_cached_s": 1.185822986997664,
+    "gpu_mem_mib": 32.035400390625,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 6,
+    "dim": 64,
+    "method": "euler_maruyama",
+    "n_trajs": 256,
+    "n_time_steps": 2048,
+    "t_first_s": 2.3899444540729746,
+    "t_cached_s": 0.15038389910478145,
+    "gpu_mem_mib": 32.78369140625,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 6,
+    "dim": 64,
+    "method": "exp_split",
+    "n_trajs": 256,
+    "n_time_steps": 2048,
+    "t_first_s": 4.163656991091557,
+    "t_cached_s": 1.4024282310856506,
+    "gpu_mem_mib": 32.78369140625,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 8,
+    "dim": 256,
+    "method": "euler_maruyama",
+    "n_trajs": 256,
+    "n_time_steps": 2048,
+    "t_first_s": 3.6307692870032042,
+    "t_cached_s": 0.45207006903365254,
+    "gpu_mem_mib": 71.009033203125,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 8,
+    "dim": 256,
+    "method": "exp_split",
+    "n_trajs": 256,
+    "n_time_steps": 2048,
+    "t_first_s": 7.65150756703224,
+    "t_cached_s": 2.730831808061339,
+    "gpu_mem_mib": 71.009033203125,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 10,
+    "dim": 1024,
+    "method": "euler_maruyama",
+    "n_trajs": 256,
+    "n_time_steps": 2048,
+    "t_first_s": 12.854812070960179,
+    "t_cached_s": 3.6492068339139223,
+    "gpu_mem_mib": 596.016357421875,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 10,
+    "dim": 1024,
+    "method": "exp_split",
+    "n_trajs": 256,
+    "n_time_steps": 2048,
+    "t_first_s": 130.6974779489683,
+    "t_cached_s": 15.084601743961684,
+    "gpu_mem_mib": 596.016357421875,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 12,
+    "dim": 4096,
+    "method": "euler_maruyama",
+    "n_trajs": 256,
+    "n_time_steps": 2048,
+    "t_first_s": 154.26679289794993,
+    "t_cached_s": 45.81307099608239,
+    "gpu_mem_mib": 6972.0703125,
+    "oom": false,
+    "error": null
+  }
+]
