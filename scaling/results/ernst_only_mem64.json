@@ -1,0 +1,32 @@
+[
+  {
+    "N": 6,
+    "dim": 64,
+    "dm_mib_theoretical": 0.03125,
+    "t_warmup_s": 5.785863479992258,
+    "t_run_s": 3.820961633013212,
+    "gpu_mem_mib": 82.376953125,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 8,
+    "dim": 256,
+    "dm_mib_theoretical": 0.5,
+    "t_warmup_s": 5.743296833999921,
+    "t_run_s": 4.228764040992246,
+    "gpu_mem_mib": 130.010009765625,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 10,
+    "dim": 1024,
+    "dm_mib_theoretical": 8.0,
+    "t_warmup_s": 23.544210116990143,
+    "t_run_s": 21.599574986001244,
+    "gpu_mem_mib": 1846.40478515625,
+    "oom": false,
+    "error": null
+  }
+]

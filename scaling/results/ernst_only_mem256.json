@@ -1,0 +1,42 @@
+[
+  {
+    "N": 6,
+    "dim": 64,
+    "dm_mib_theoretical": 0.03125,
+    "t_warmup_s": 5.9716794739943,
+    "t_run_s": 3.8569268379942514,
+    "gpu_mem_mib": 82.376953125,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 8,
+    "dim": 256,
+    "dm_mib_theoretical": 0.5,
+    "t_warmup_s": 5.99597462703241,
+    "t_run_s": 4.266261524986476,
+    "gpu_mem_mib": 130.010009765625,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 10,
+    "dim": 1024,
+    "dm_mib_theoretical": 8.0,
+    "t_warmup_s": 23.81302354298532,
+    "t_run_s": 21.784722544020042,
+    "gpu_mem_mib": 1846.40478515625,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 12,
+    "dim": 4096,
+    "dm_mib_theoretical": 128.0,
+    "t_warmup_s": NaN,
+    "t_run_s": NaN,
+    "gpu_mem_mib": 19932.375,
+    "oom": true,
+    "error": "JaxRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 7.50GiB."
+  }
+]

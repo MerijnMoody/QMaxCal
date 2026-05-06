@@ -1,0 +1,62 @@
+[
+  {
+    "N": 4,
+    "dim": 16,
+    "method": "ernst",
+    "n_trajs": null,
+    "t_ms": 4914.200516010169,
+    "trace_dist": 0.0,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 4,
+    "dim": 16,
+    "method": "sse",
+    "n_trajs": 64,
+    "t_ms": 5657.826731039677,
+    "trace_dist": 0.06623478978872299,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 4,
+    "dim": 16,
+    "method": "sse",
+    "n_trajs": 256,
+    "t_ms": 5883.756689960137,
+    "trace_dist": 0.05081354081630707,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 6,
+    "dim": 64,
+    "method": "ernst",
+    "n_trajs": null,
+    "t_ms": 4182.220251997933,
+    "trace_dist": 0.0,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 6,
+    "dim": 64,
+    "method": "sse",
+    "n_trajs": 64,
+    "t_ms": 5710.247422044631,
+    "trace_dist": 0.10917860269546509,
+    "oom": false,
+    "error": null
+  },
+  {
+    "N": 6,
+    "dim": 64,
+    "method": "sse",
+    "n_trajs": 256,
+    "t_ms": 5751.776762015652,
+    "trace_dist": 0.0709078311920166,
+    "oom": false,
+    "error": null
+  }
+]
