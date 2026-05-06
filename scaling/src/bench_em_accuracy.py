@@ -29,7 +29,7 @@ N_TRAJS = 256
 NTS_LIST = [256, 1024, 4096, 16384, 65536]
 SEEDS = [17, 42, 101, 314, 1729]   # five different "systems"
 
-OUT = '/home/mmoody/qmaxcal_paper/scaling/results/em_accuracy.json'
+OUT = '<repo-root>/scaling/results/em_accuracy.json'
 
 
 def hamiltonian_norms(sys_dict):

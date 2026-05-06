@@ -1,8 +1,7 @@
 # QMaxCal — paper artifacts
 
-Self-contained snapshot of the code and data needed to reproduce the
-chain-experiment figures and the SSE scaling experiment from the QMaxCal
-paper.
+Self-contained snapshot of the code and data needed to reproduce all
+experiments and figures of the QMaxCal paper.
 
 ## Layout
 
@@ -11,19 +10,38 @@ qmaxcal_paper/
 ├── core/                              SSE / Lindblad solver
 ├── Ernst/rl_working/                  PPO + RL environment helpers (Ernst 2025 codebase)
 ├── systems/                           Per-experiment Hamiltonians + jump ops
-│   ├── spin_chain_4.py                4-qubit chain with edge-noise asymmetry
-│   └── spin_chain_6_kingston_q14_q9.py 6-qubit IBM Kingston q14→q9 chain
-├── train_qmaxcal.py                   QMaxCal training (Fourier controller, SSE loss)
+│   ├── amplitude_damping.py           Single-qubit T1 relaxation (Section 3)
+│   ├── stirap_3level.py               STIRAP 3-level Λ system (Section 4)
+│   ├── dark_route_v3.py               Diamond / dark-route 4-level system (Section 4)
+│   ├── spin_chain_4.py                4-qubit chain with edge-noise asymmetry (Section 4)
+│   └── spin_chain_6_kingston_q14_q9.py 6-qubit IBM Kingston q14→q9 chain (Section 4)
+├── train_qmaxcal.py                   QMaxCal training (Fourier controller, SSE loss;
+│                                      supports KL_W, drift-variance, fluence,
+│                                      and Abdelhafez C4/C5 derivative penalties)
 ├── train_ppo.py                       PPO baseline (uses Ernst/rl_working/)
 ├── figures/                           Paper figure scripts + .png outputs
-│   ├── fig_2dv_3rho_seeds.py          Section 4 chain-4 ρ-sweep figure
-│   └── fig_chain6_q14_q9_4policies.py 4-policy comparison on the IBM Kingston chain
+│   ├── fig_ampdamp_populations_4panel.py  Section 3 amp-damping populations (4 panels)
+│   ├── fig_ampdamp_alpha2_log.py          Wiener-KL integrand on log axis
+│   ├── fig_ampdamp_drift_4panel.py        Drift α(t) per policy (appendix)
+│   ├── fig_stirap_compare.py              STIRAP populations: baseline / KL / PPO
+│   ├── fig_diamond_3panel_robust.py       Section 4 diamond + γ-robustness
+│   ├── fig_2dv_3rho_seeds.py              Section 4 chain-4 ρ-sweep figure
+│   ├── fig_chain6_q14_q9_4policies.py     Section 4 IBM Kingston chain
+│   └── extract_ernst_u_stack.py           Helper: extract det. action sequence from PPO params
 ├── scaling/                           SSE scaling experiment (Section 5)
 │   ├── DESIGN.md
 │   ├── src/                           bench_*.py
 │   ├── scripts/                       slurm submission scripts
 │   └── results/                       JSON output (per cell)
 ├── results/                           Paper-figure data (saved snapshots)
+│   ├── ampdamp/qmaxcal/multiseed_g{γ}/  multi-seed amp damping controllers
+│   ├── ampdamp/qmaxcal/smooth/          smoothness-ablation controllers
+│   ├── ampdamp/ppo/                     PPO params + extracted u_stack
+│   ├── stirap/qmaxcal/{n64,smooth}/     STIRAP controllers (KL, smoothness)
+│   ├── stirap/ppo/                      PPO params + extracted u_stack
+│   ├── diamond/qmaxcal/multiseed/       diamond controllers (baseline + KL)
+│   ├── diamond/ppo/                     PPO checkpoints
+│   ├── diamond/robustness/              dr3_robustness_multiseed.npz (γ-perturbation eval)
 │   ├── chain4/qmaxcal/variance_asym_sweep_original/
 │   ├── chain6/qmaxcal/variance_q14_q9_flw0.02/
 │   └── chain6/ppo/q14_q9_sm0.001_ks4.0/
@@ -34,20 +52,42 @@ qmaxcal_paper/
 
 ## Reproducing the figures
 
-The two paper figures regenerate from the saved snapshots in `results/`:
+Each figure regenerates from the saved snapshots in `results/`:
 
 ```bash
-sbatch run_plot_r2dv.sh           # → figures/fig_2dv_3rho_seeds.png
-sbatch run_plot_ch6_q14q9_4pol.sh # → figures/fig_chain6_q14_q9_4policies.png
+# Section 3 — amplitude damping
+python figures/fig_ampdamp_populations_4panel.py   # populations + variance, γT=2
+python figures/fig_ampdamp_alpha2_log.py           # Wiener-KL integrand on log axis
+python figures/fig_ampdamp_drift_4panel.py         # drift α(t) (appendix)
+
+# Section 4 — STIRAP and diamond
+python figures/fig_stirap_compare.py               # populations: baseline/KL/PPO
+python figures/fig_diamond_3panel_robust.py        # populations + γ-perturbation robustness
+
+# Section 4 — chain-4 / chain-6
+sbatch run_plot_r2dv.sh                            # → figures/fig_2dv_3rho_seeds.png
+sbatch run_plot_ch6_q14q9_4pol.sh                  # → figures/fig_chain6_q14_q9_4policies.png
 ```
 
 ## Reproducing the data
 
 QMaxCal training (no Ernst dependency):
 ```bash
+# Section 3 — amp damping multi-seed (5 γT × 2 KL × 2 seeds = 20 tasks)
+sbatch run_ampdamp_multiseed.sh
+
+# Section 4 — STIRAP multi-seed (2 γ × 2 KL × 3 seeds = 12 tasks)
+sbatch run_stirap_multiseed.sh
+
+# Section 4 — diamond multi-seed ({baseline, KL=0.5, KL=5} × 3 seeds = 9 tasks)
+sbatch run_diamond_multiseed.sh
+
+# Smoothness ablation (Abdelhafez C4/C5 vs Wiener-KL)
+sbatch run_smoothness_ablation.sh
+
+# Section 4 — chain-4 / chain-6
 sbatch run_chain4_asymmetry.sh                   # chain-4 ρ-sweep
 sbatch run_chain6_kingston_q14_q9_linflu.sh      # chain-6 baseline + DV
-# Multi-seed variance scripts live inside the variance_* result dirs:
 sbatch results/chain6/qmaxcal/variance_q14_q9_flw0.02/run_seeds.sh
 sbatch results/chain6/qmaxcal/variance_q14_q9_flw0.02/run_kl0p1.sh
 sbatch results/chain6/qmaxcal/variance_q14_q9_flw0.02/run_kl0p1_seeds.sh
@@ -55,6 +95,13 @@ sbatch results/chain6/qmaxcal/variance_q14_q9_flw0.02/run_kl0p1_seeds.sh
 
 PPO training (Ernst/rl_working/ bundled in this repo):
 ```bash
+# Phase-B winners for amp damping, STIRAP, and diamond
+sbatch run_ppo_baselines.sh
+
+# Fluence-penalty sanity check (λ_flu=0 across the same three systems)
+sbatch run_ppo_flu0_sanity.sh
+
+# Section 4 chain-6
 sbatch run_ch6q149_ppo_sweep.sh
 sbatch run_ch6q149_ppo_best_seeds.sh
 ```

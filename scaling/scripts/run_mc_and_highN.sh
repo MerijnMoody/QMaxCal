@@ -12,7 +12,9 @@
 #  Part 1: n_trajs sweep at N=10 with 10 reseeds  -> clean MC convergence
 #  Part 2: SSE forward pass at N=12, 14, 16        -> high-N reach
 PYTHON=~/qmaxcal_venv/bin/python
-cd /home/mmoody/qmaxcal_paper
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+while [ ! -f "$ROOT/train_qmaxcal.py" ] && [ "$ROOT" != "/" ]; do ROOT="$(dirname "$ROOT")"; done
+cd "$ROOT"
 
 $PYTHON -u scaling/src/bench_mc_and_highN.py
 

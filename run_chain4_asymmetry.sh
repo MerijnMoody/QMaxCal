@@ -31,7 +31,7 @@
 #   task 7:  ratio=8.0   DV=0.02
 
 PYTHON=~/qmaxcal_venv/bin/python
-cd /home/mmoody/qmaxcal_paper
+cd "$(dirname "$(realpath "$0")")"
 
 RATIOS=(1.0 1.0 1.5 1.5 2.0 2.0 8.0 8.0)
 KLS=(   0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)

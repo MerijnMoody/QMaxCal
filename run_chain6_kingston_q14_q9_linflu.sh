@@ -18,7 +18,7 @@
 #   1:  fluence_weight=0.02,  dv = 16
 
 PYTHON=~/qmaxcal_venv/bin/python
-cd /home/mmoody/qmaxcal_paper
+cd "$(dirname "$(realpath "$0")")"
 
 FLW=0.01
 DVS=(0.0 16.0)

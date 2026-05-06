@@ -13,7 +13,9 @@
 # 10-100x more.
 
 PYTHON=~/qmaxcal_venv/bin/python
-cd /home/mmoody/qmaxcal_paper
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+while [ ! -f "$ROOT/train_qmaxcal.py" ] && [ "$ROOT" != "/" ]; do ROOT="$(dirname "$ROOT")"; done
+cd "$ROOT"
 
 $PYTHON -u scaling/src/bench_em_accuracy.py
 

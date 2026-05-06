@@ -13,7 +13,9 @@
 # end-to-end before launching the full sweep.
 
 PYTHON=~/qmaxcal_venv/bin/python
-cd /home/mmoody/qmaxcal_paper
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+while [ ! -f "$ROOT/train_qmaxcal.py" ] && [ "$ROOT" != "/" ]; do ROOT="$(dirname "$ROOT")"; done
+cd "$ROOT"
 
 echo "=== bench_wallclock --smoke ==="
 $PYTHON -u scaling/src/bench_wallclock.py --smoke \

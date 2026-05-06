@@ -18,7 +18,6 @@ Usage:
         --out chain4_variance.png
 """
 import os, sys, pickle, argparse, importlib
-sys.path.insert(0, '/home/mmoody/qmaxcal_paper')
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import numpy as np

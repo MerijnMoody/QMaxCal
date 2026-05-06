@@ -20,8 +20,8 @@ Our solver    = ExponentialSplit on n_trajs SSE samples; the SSE-mean
                 |psi><psi| is the rho estimate.
 """
 import os, sys, time, json
-sys.path.insert(0, '/home/mmoody/qmaxcal_paper')
-sys.path.insert(0, '/home/mmoody/qmaxcal_paper/experiments/template')
+sys.path.insert(0, '<repo-root>')
+sys.path.insert(0, '<repo-root>/experiments/template')
 
 import numpy as np
 import jax
@@ -220,7 +220,7 @@ def time_after_warmup(fn, n_warmup=2, n_runs=5):
     return float(np.median(times)), res
 
 
-def main(out_path='/home/mmoody/qmaxcal_paper/experiments/template/benchmarks/solver_benchmark.json'):
+def main(out_path='<repo-root>/experiments/template/benchmarks/solver_benchmark.json'):
     T_FINAL = 1.0
     N_MODES = 4
     PULSE_AMPLITUDE = 1.0

@@ -26,7 +26,7 @@ T_FINAL = 1.0
 N_MODES = 4
 PULSE_AMPLITUDE = 1.0
 
-OUT = '/home/mmoody/qmaxcal_paper/scaling/results/mc_and_highN.json'
+OUT = '<repo-root>/scaling/results/mc_and_highN.json'
 
 
 def gpu_mem_mib():

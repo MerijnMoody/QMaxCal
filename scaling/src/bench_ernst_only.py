@@ -29,7 +29,7 @@ PULSE_AMPLITUDE = 1.0
 N_LIST = [6, 8, 10, 12, 13, 14, 15]
 OUT = os.environ.get(
     'ERNST_OUT',
-    '/home/mmoody/qmaxcal_paper/scaling/results/ernst_only.json',
+    '<repo-root>/scaling/results/ernst_only.json',
 )
 
 

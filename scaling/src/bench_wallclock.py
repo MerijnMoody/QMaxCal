@@ -37,7 +37,7 @@ def parse_args():
     p.add_argument('--n-list', type=int, nargs='+', default=None)
     p.add_argument('--n-trajs', type=int, nargs='+', default=None)
     p.add_argument('--out', type=str,
-                   default='/home/mmoody/qmaxcal_paper/scaling/results/wallclock.json')
+                   default='<repo-root>/scaling/results/wallclock.json')
     return p.parse_args()
 
 

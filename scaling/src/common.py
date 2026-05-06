@@ -4,8 +4,8 @@ Imports the existing solver_benchmark helpers, adds OOM-aware versions and
 a population observable for the variance benchmark.
 """
 import os, sys, time
-sys.path.insert(0, '/home/mmoody/qmaxcal_paper')
-sys.path.insert(0, '/home/mmoody/qmaxcal_paper')
+sys.path.insert(0, '<repo-root>')
+sys.path.insert(0, '<repo-root>')
 
 import numpy as np
 import jax

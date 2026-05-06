@@ -6,6 +6,6 @@
 #SBATCH --mem=4G
 #SBATCH --time=00:05:00
 #SBATCH --output=logs/plot_4pol_%j.out
-cd /home/mmoody/qmaxcal_paper
+cd "$(dirname "$(realpath "$0")")"
 ~/qmaxcal_venv/bin/python -u figures/fig_chain6_q14_q9_4policies.py
 echo done

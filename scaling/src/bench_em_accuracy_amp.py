@@ -31,7 +31,7 @@ SEED = 17
 NTS_LIST = [256, 1024, 4096, 16384, 65536]
 AMPLITUDES = [1.0, 3.0, 10.0]
 
-OUT = '/home/mmoody/qmaxcal_paper/scaling/results/em_accuracy_amp.json'
+OUT = '<repo-root>/scaling/results/em_accuracy_amp.json'
 
 
 def hamiltonian_norm(sys_dict, a, b, n_modes, T):
