@@ -1,168 +1,135 @@
-# QMaxCal — paper artifacts
+# QMaxCal
 
-Self-contained snapshot of the code and data needed to reproduce all
-experiments and figures of the QMaxCal paper.
+QMaxCal designs control pulses for open quantum systems by training directly on
+simulated measurement trajectories. A pulse is a truncated Fourier series per
+control channel. Training samples diffusive quantum trajectories (a stochastic
+Schrödinger equation, SSE), differentiates through them with JAX, and maximises
+the trajectory-averaged target fidelity plus optional regularizers, such as the
+Wiener KL divergence between the measurement record and pure noise. Finished
+pulses are scored with an exact Lindblad master-equation solver.
 
-## Layout
+To reproduce the figures and tables of the paper, see [`paper/README.md`](paper/README.md).
 
-```
-qmaxcal_paper/
-├── core/                              SSE / Lindblad solver
-├── PPO/rl_working/                  PPO baseline + RL environment helpers
-├── systems/                           Per-experiment Hamiltonians + jump ops
-│   ├── amplitude_damping.py           Single-qubit T1 relaxation (Section 3)
-│   ├── stirap_3level.py               STIRAP 3-level Λ system (Section 4)
-│   ├── dark_route_v3.py               Diamond / dark-route 4-level system (Section 4)
-│   ├── spin_chain_4.py                4-qubit chain with edge-noise asymmetry (Section 4)
-│   ├── spin_chain_6_kingston_q14_q9.py 6-qubit IBM Kingston q14→q9 chain (Section 4)
-│   ├── single_qubit_ampdamp.py        Amplitude damping with tunable LO phase φ (appendix)
-│   └── single_qubit_dephasing.py      Single-qubit pure dephasing (appendix)
-├── train_qmaxcal.py                   QMaxCal training (Fourier controller, SSE loss;
-│                                      supports KL_W, drift-variance, fluence,
-│                                      and Abdelhafez C4/C5 derivative penalties)
-├── train_ppo.py                       PPO baseline (uses PPO/rl_working/)
-├── figures/                           Paper figure scripts + .png outputs
-│   ├── fig_ampdamp_populations_4panel.py  Section 3 amp-damping populations (4 panels)
-│   ├── fig_ampdamp_alpha2_log.py          Wiener-KL integrand on log axis
-│   ├── fig_ampdamp_drift_4panel.py        Drift α(t) per policy (appendix)
-│   ├── fig_stirap_compare.py              STIRAP populations: baseline / KL / PPO
-│   ├── fig_diamond_3panel_robust.py       Section 4 diamond + γ-robustness
-│   ├── fig_2dv_3rho_seeds.py              Section 4 chain-4 ρ-sweep figure
-│   ├── fig_chain6_q14_q9_4policies.py     Section 4 IBM Kingston chain
-│   └── extract_ppo_u_stack.py           Helper: extract det. action sequence from PPO params
-├── scaling/                           SSE scaling experiment (Section 5)
-│   ├── DESIGN.md
-│   ├── src/                           bench_*.py
-│   ├── scripts/                       slurm submission scripts
-│   └── results/                       JSON output (per cell)
-├── results/                           Paper-figure data (saved snapshots)
-│   ├── ampdamp/qmaxcal/multiseed_g{γ}/  multi-seed amp damping controllers
-│   ├── ampdamp/qmaxcal/smooth/          smoothness-ablation controllers
-│   ├── ampdamp/ppo/                     PPO params + extracted u_stack
-│   ├── stirap/qmaxcal/{n64,smooth}/     STIRAP controllers (KL, smoothness)
-│   ├── stirap/ppo/                      PPO params + extracted u_stack
-│   ├── diamond/qmaxcal/multiseed/       diamond controllers (baseline + KL)
-│   ├── diamond/ppo/                     PPO checkpoints
-│   ├── diamond/robustness/              dr3_robustness_multiseed.npz (γ-perturbation eval)
-│   ├── chain4/qmaxcal/variance_asym_sweep_original/
-│   ├── chain6/qmaxcal/variance_q14_q9_flw0.02/
-│   └── chain6/ppo/q14_q9_sm0.001_ks4.0/
-├── benchmarks/                        Solver micro-benchmark (used by scaling/)
-├── run_*.sh                           SLURM scripts to (re)produce data + figures
-└── logs/                              SLURM stdout/stderr (gitignored)
-```
+## Installation
 
-## Reproducing the figures
-
-Each figure regenerates from the saved snapshots in `results/`:
+Tested with Python 3.13, JAX 0.9.2, flax 0.12.6 and optax 0.2.8. Install JAX for your hardware first
+(see the [JAX install guide](https://docs.jax.dev/en/latest/installation.html)), then
 
 ```bash
-# Section 3 — amplitude damping
-python figures/fig_ampdamp_populations_4panel.py   # populations + variance, γT=2
-python figures/fig_ampdamp_alpha2_log.py           # Wiener-KL integrand on log axis
-python figures/fig_ampdamp_drift_4panel.py         # drift α(t) (appendix)
-
-# Section 4 — STIRAP and diamond
-python figures/fig_stirap_compare.py               # populations: baseline/KL/PPO
-python figures/fig_diamond_3panel_robust.py        # populations + γ-perturbation robustness
-
-# Section 4 — chain-4 / chain-6
-sbatch run_plot_r2dv.sh                            # → figures/fig_2dv_3rho_seeds.png
-sbatch run_plot_ch6_q14q9_4pol.sh                  # → figures/fig_chain6_q14_q9_4policies.png
+pip install flax optax equinox jaxtyping numpy matplotlib
+pip install jupyter                       # optional, for quickstart.ipynb
+pip install gymnax chex qiskit-dynamics diffrax   # optional, PPO baseline only
 ```
 
-## Reproducing the data
+`dynamiqs` is optional; `core/types.py` falls back to a built-in replacement when
+it is not installed. All commands below are run from the repository root.
 
-QMaxCal training (no PPO dependency):
-```bash
-# Section 3 — amp damping multi-seed (5 γT × 2 KL × 2 seeds = 20 tasks)
-sbatch run_ampdamp_multiseed.sh
+## Quickstart
 
-# Section 4 — STIRAP multi-seed (2 γ × 2 KL × 3 seeds = 12 tasks)
-sbatch run_stirap_multiseed.sh
+Open [`quickstart.ipynb`](quickstart.ipynb). It builds a system, loads trained
+controllers, evaluates them with the exact Lindblad solver and with SSE
+trajectories, tabulates a folder of runs, and trains a small controller.
 
-# Section 4 — diamond multi-seed ({baseline, KL=0.5, KL=5} × 3 seeds = 9 tasks)
-sbatch run_diamond_multiseed.sh
-
-# Smoothness ablation (Abdelhafez C4/C5 vs Wiener-KL)
-sbatch run_smoothness_ablation.sh
-
-# Section 4 — chain-4 / chain-6
-sbatch run_chain4_asymmetry.sh                   # chain-4 ρ-sweep
-sbatch run_chain6_kingston_q14_q9_linflu.sh      # chain-6 baseline + DV
-sbatch results/chain6/qmaxcal/variance_q14_q9_flw0.02/run_seeds.sh
-sbatch results/chain6/qmaxcal/variance_q14_q9_flw0.02/run_kl0p1.sh
-sbatch results/chain6/qmaxcal/variance_q14_q9_flw0.02/run_kl0p1_seeds.sh
-```
-
-PPO training (PPO/rl_working/ bundled in this repo):
-```bash
-# Phase-B winners for amp damping, STIRAP, and diamond
-sbatch run_ppo_baselines.sh
-
-# Fluence-penalty sanity check (λ_flu=0 across the same three systems)
-sbatch run_ppo_flu0_sanity.sh
-
-# Section 4 chain-6
-sbatch run_ch6q149_ppo_sweep.sh
-sbatch run_ch6q149_ppo_best_seeds.sh
-```
-
-## Additional experiments (appendix)
-
-LO-phase dependence of the Wiener KL on the amplitude-damped qubit. The
-jump operator is L = √γ e^{iφ} σ₋ with σ₋ = |0⟩⟨1|, so the monitored
-quadrature is e^{iφ}σ₋ + e^{−iφ}σ₊ = cos φ σx − sin φ σy. Results go to
-`results/ampdamp/qmaxcal/lo_phase/`.
-```bash
-sbatch run_qubit1_ampdamp_phase_kl5_g2.sh     # γT=2, λ_KLW=5, φ ∈ {0, π/4, π/2}
-sbatch run_qubit1_ampdamp_phase_kl1_g2.sh     # γT=2, λ_KLW=1, seed 0
-sbatch run_qubit1_ampdamp_kl1_g2_seeds.sh     # γT=2, λ_KLW=1, seeds 1, 2
-sbatch run_qubit1_ampdamp_noreg_hinoise.sh    # unregularized, γT ∈ {0.5, 2}
-sbatch run_qubit1_ampdamp_kl_sweep_pi4.sh     # γT=2, φ=π/4, λ_KLW ∈ {0.5, 2}
-sbatch run_qubit1_ampdamp_phase.sh            # γT=0.1, λ_KLW=1, φ ∈ {π/4, π/2}
-sbatch run_qubit1_ampdamp_phi0.sh             # γT=0.1, λ_KLW=1, φ=0
-sbatch run_qubit1_ampdamp_phi0_noreg.sh       # γT=0.1, unregularized
-sbatch run_qubit1_ampdamp_phase_dv.sh         # γT=0.5, R_DV=1, three phases
-sbatch run_qubit1_ampdamp_phase_dv_g2.sh      # γT=2,   R_DV=1, three phases
-sbatch run_qubit1_ampdamp_phase_kl_hinoise.sh # γT ∈ {0.5, 2}, λ_KLW=1, three phases
-```
-Each run directory holds `controller.pkl` (best exact-Lindblad snapshot) and
-`controller_best_by_loss.pkl` (lowest training loss; used for the LO-phase table).
-
-Regularizer comparisons (KL_W, R_DV and the LO-phase-invariant Var(L)
-penalty, `--var_l_weight` in `train_qmaxcal.py`):
-```bash
-sbatch run_qubit1_dephasing_3reg.sh           # single-qubit dephasing → results/dephasing/qmaxcal/pure_dephasing/
-sbatch run_qubit1_dephasing_hiweight.sh       # same, 10x weights
-sbatch run_chain4_dephasing_3reg.sh           # chain-4 endpoint noise → results/chain4/qmaxcal/endnoise_r4/
-sbatch run_chain6_kingston_varl.sh            # chain-6 Var(L) penalty → results/chain6/qmaxcal/variance_q14_q9_flw0.02/
-sbatch run_chain6_kingston_fluence_front.sh   # chain-6 fluence-only front → results/chain6/qmaxcal/kingston_q14_q9_linflu/
-sbatch run_chain6_kingston_q14_q9_linflu_flw0.sh  # chain-6 linear fluence, weight 0
-```
-Summary plots: `figures/qubit1_ampdamp_phase*.png`, `figures/qubit1_dephasing_3reg.png`,
-`figures/chain4_dephasing_3reg.png`, `figures/chain6_fluence_front_ablation.png`.
-
-## Scaling experiment
-
-See `scaling/DESIGN.md`. Key benchmarks:
+From the command line, a training run looks like this:
 
 ```bash
-sbatch scaling/scripts/run_em_scaling.sh   # EM vs ExpSplit per-step wall-clock vs N
-sbatch scaling/scripts/run_lindblad_only.sh  # Lindblad solver OOM scan
+python train_qmaxcal.py --system systems.amplitude_damping --gamma 2.0 \
+    --kl_weight 5.0 --fluence_weight 0.01 \
+    --n_modes 20 --init_scale 0.1 --n_trajs 256 --num_steps 5000 \
+    --output_dir runs/ampdamp
 ```
 
-Results land in `scaling/results/*.json`; plots can be added on top.
+This takes about 30 minutes on one A100 GPU.
+`python train_qmaxcal.py --system systems.<name> --help` lists every option,
+including the system's own (e.g. `--gamma`, `--lo_phase`).
 
-## Dependencies
+## Training options
 
-- `jax`, `flax`, `optax`, `dynamiqs`, `numpy`, `matplotlib`, `pickle` — for QMaxCal.
-- `qiskit-dynamics`, `diffrax` — for the Lindblad reference solver in `scaling/`.
-- For PPO retraining only: `gymnax`, `chex` (the PPO RL codebase
-  is included under `PPO/rl_working/`).
+The loss is
+
+```
+loss = (1 − F_SSE) + λ_KL·KL_W + λ_DV·R_DV + λ_flu·fluence + λ_VarL·Var(L) + smoothness terms
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--kl_weight` | 0 | Wiener KL, ½ E[∫ Σ_k α_k² dt], with record drift α_k = 2 Re⟨L_k⟩ |
+| `--drift_var_weight` | 0 | R_DV, the time variance of the record drift α |
+| `--var_l_weight` | 0 | Var(L) = E[∫ (⟨L†L⟩ − \|⟨L⟩\|²) dt], invariant under the local-oscillator phase |
+| `--fluence_weight` | 0 | Pulse energy ∫ \|u\|² dt (`--fluence_max` turns it into a hinge above a budget) |
+| `--deriv1_weight`, `--deriv2_weight` | 0 | Penalties on the first and second time derivatives of the pulse |
+| `--fluence_warmup_steps`, `--drift_var_warmup_steps`, `--smooth_warmup_steps` | 0 | Steps before the corresponding penalty switches on |
+| `--n_modes` | 16 | Fourier modes per control channel |
+| `--init_scale` | 1.0 | Scale of the random initial coefficients |
+| `--n_trajs` | 128 | SSE trajectories per training step |
+| `--n_time_steps` | 256 | SSE time steps over [0, T] |
+| `--num_steps`, `--lr` | 10000, 1e-3 | Adam steps and learning rate |
+| `--method` | `exp_split` | SSE integrator: `exp_split` (exponential splitting) or `euler` (Euler–Maruyama) |
+| `--snap_every` | 500 | How often to evaluate with the exact Lindblad solver and save a snapshot |
+| `--seed`, `--output_dir` | 0, `results` | Random seed and output folder |
+
+## Outputs
+
+Each run writes one folder named after the system and the loss weights, e.g.
+`ampdamp_g2.0_T1.0_kl5.0_dv0.0_fl0.01_seed0/`, containing:
+
+- `controller.pkl`: Fourier coefficients at the last training step (`best_dc`,
+  `best_cos_coeffs`, `best_sin_coeffs`), plus `best_exact_fidelity` and
+  `best_step` of the best exact-Lindblad snapshot.
+- `controller_best_by_loss.pkl`: coefficients at the step with the lowest
+  training loss, and their exact fidelity `f_exact_at_best_loss`.
+- `snap_*.pkl`: periodic snapshots with populations, pulses and regularizer values.
+
+To rebuild and evaluate a saved controller:
+
+```python
+import pickle, jax.numpy as jnp
+from flax import nnx
+import train_qmaxcal as tq
+from systems import amplitude_damping
+
+ck = pickle.load(open("runs/ampdamp/<run>/controller_best_by_loss.pkl", "rb"))
+n_ctrl, n_modes = ck["best_cos_coeffs"].shape
+ctrl = tq.FourierController(n_ctrl, n_modes, ck["T_final"], rngs=nnx.Rngs(0))
+ctrl.dc, ctrl.cos_coeffs, ctrl.sin_coeffs = (nnx.Param(jnp.asarray(ck[k]))
+    for k in ("best_dc", "best_cos_coeffs", "best_sin_coeffs"))
+
+sysd = amplitude_damping.create_system(**ck["system_kwargs"])
+times, pops, rho_T = tq.lindblad_trajectory(ctrl, sysd)   # exact Lindblad, RK4
+```
+
+`plot_snapshots.py` plots the latest snapshot of one or more run folders, and
+`plot_with_variance.py` plots the mean ± std of SSE populations for saved controllers.
+
+## Adding a system
+
+A system is a module in `systems/` with two functions:
+
+- `create_system(**kwargs)` returns a dict with
+  - `H_sys` (drift Hamiltonian), `H_ops` (list of control operators), `jump_ops` (list of jump operators L_k), all as complex64 JAX arrays;
+  - `psi0` and `target_state`, column vectors of shape (dim, 1);
+  - `T_final`, `n_controls`, `control_labels`, `system_name` (used in the run folder name);
+  - `populations`: dict of name → projector, used for plots and snapshots;
+  - optionally `forbidden_states` (names in `populations` whose peak and integral are logged) and `control_transform` (`'abs'`, `'square'`, `'softplus'` to constrain the sign of the pulse).
+- `add_system_args(parser)` adds the system's own command-line flags. Their
+  values are passed to `create_system`.
+
+`systems/amplitude_damping.py` is a short example. The PPO baseline also reads
+`n_dim`, `signal_scale` and `action_range`.
+
+## Repository layout
+
+```
+core/                 SSE solver (dssesolve), integrators, density-matrix utilities
+systems/              Physical systems (one module each)
+train_qmaxcal.py      QMaxCal trainer: Fourier controller, SSE loss, exact Lindblad evaluation
+train_ppo.py          PPO baseline trainer (uses PPO/rl_working/)
+PPO/rl_working/       PPO implementation and RL environment helpers
+plot_snapshots.py     Plot the latest snapshot of run folders
+plot_with_variance.py Plot SSE population mean ± std for saved controllers
+quickstart.ipynb      Guided tour
+paper/                Everything needed to reproduce the paper (see paper/README.md)
+```
 
 The PPO baseline code in `PPO/rl_working/` is adapted from the RL codebase of
 Ernst et al. (2025).
-
-A python venv at `~/qmaxcal_venv/` is assumed by the SLURM scripts;
-adapt the `PYTHON=` lines to your local interpreter.
