@@ -3,12 +3,12 @@
 
 1. PRECISION CHECK at N=10. Re-run the convergence sweep with
    jax_enable_x64=True (i.e. complex128 throughout) so SSE matches
-   Ernst's internal precision. If bias collapses to ~1e-3 or below, the
+   the Lindblad solver's internal precision. If bias collapses to ~1e-3 or below, the
    floor we saw in the float32 sweep was complex64 round-off; if it
    stays at ~0.04, there's a structural mismatch.
 
 2. HIGH-N SSE SMOKE at N=12, 14 (and 16 if memory permits). One SSE
-   forward pass each, no Lindblad comparison (Ernst OOMs above N=11
+   forward pass each, no Lindblad comparison (the Lindblad solver OOMs above N=11
    on a 40 GB A100). Records wall-clock and peak GPU memory to confirm
    SSE actually runs where Lindblad doesn't.
 
@@ -24,7 +24,7 @@ jax.config.update('jax_enable_x64', True)
 import numpy as np
 import jax.numpy as jnp
 
-from common import (random_chain, random_fourier_coeffs, ernst_evolve,
+from common import (random_chain, random_fourier_coeffs, lindblad_evolve,
                      rho_estimator, frobenius_distance)
 
 T_FINAL = 1.0
@@ -73,7 +73,7 @@ def main():
 
     try:
         t0 = time.perf_counter()
-        rho_truth = ernst_evolve(sys_dict, a, b, T_FINAL)
+        rho_truth = lindblad_evolve(sys_dict, a, b, T_FINAL)
         t_truth = time.perf_counter() - t0
         print(f'  Lindblad ground truth: t={t_truth:.1f}s  shape={rho_truth.shape}  '
               f'dtype={rho_truth.dtype}')
@@ -134,7 +134,7 @@ def main():
         pass
 
     # =====================================================================
-    # PART 2: high-N SSE smoke (no Ernst comparison)
+    # PART 2: high-N SSE smoke (no Lindblad comparison)
     # =====================================================================
     HIGH_N_LIST = [12, 14, 16]
     HIGH_NTS    = 2048

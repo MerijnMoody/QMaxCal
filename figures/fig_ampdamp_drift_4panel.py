@@ -42,7 +42,7 @@ def load_qmc(path):
     return ctrl
 
 
-def load_ernst_npz(npz_path):
+def load_ppo_npz(npz_path):
     d = np.load(npz_path); return d["ts"], d["u"]
 
 
@@ -84,7 +84,7 @@ def sample_drift(ctrl, sysdict, n_trajs=N_TRAJS, n_time_steps=N_TIME_STEPS, seed
 def main():
     sysdict = sys_mod.create_system(gamma=2.0, T_final=1.0)
     BASE_QMC   = os.path.join(ROOT, "results", "ampdamp", "qmaxcal", "multiseed_g2.0")
-    BASE_ERNST = os.path.join(ROOT, "results", "ampdamp", "ppo")
+    BASE_PPO = os.path.join(ROOT, "results", "ampdamp", "ppo")
 
     PANELS = [
         ("Baseline ($\\lambda_{\\mathrm{KL}_\\mathrm{W}}{=}\\lambda_{R_{\\mathrm{DV}}}{=}0$)", "qmc",
@@ -93,8 +93,8 @@ def main():
          f"{BASE_QMC}/ampdamp_g2.0_T1.0_kl5.0_dv0.0_fl0.01_seed1/controller.pkl"),
         ("Drift variance ($\\lambda_{R_{\\mathrm{DV}}}{=}5$)", "qmc",
          f"{BASE_QMC}/ampdamp_g2.0_T1.0_kl0.0_dv5.0_fl0.01_seed1/controller.pkl"),
-        ("PPO", "ernst",
-         os.path.join(BASE_ERNST, "ernst_ampdamp_g2_seed1_ustack.npz")),
+        ("PPO", "ppo",
+         os.path.join(BASE_PPO, "ppo_ampdamp_g2_seed1_ustack.npz")),
     ]
 
     plt.rcParams.update({
@@ -110,7 +110,7 @@ def main():
         if kind == "qmc":
             ctrl = load_qmc(path)
         else:
-            ts_act, u_arr = load_ernst_npz(path)
+            ts_act, u_arr = load_ppo_npz(path)
             ctrl = TabulatedController(ts_act, u_arr)
         print(f"[{title}] sampling drift over {N_TRAJS} SSE trajectories...")
         t, alpha = sample_drift(ctrl, sysdict)   # (n_jumps, n_trajs, n_times)

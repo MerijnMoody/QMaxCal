@@ -17,7 +17,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 while [ ! -f "$ROOT/train_qmaxcal.py" ] && [ "$ROOT" != "/" ]; do ROOT="$(dirname "$ROOT")"; done
 cd "$ROOT"
 
-ERNST_OUT=scaling/results/highN_only.json $PYTHON -u - <<'EOF'
+LINDBLAD_OUT=scaling/results/highN_only.json $PYTHON -u - <<'EOF'
 import os, sys, json, time, gc
 sys.path.insert(0, '<repo-root>/scaling/src')
 
@@ -35,7 +35,7 @@ HIGH_N_LIST = [12, 14, 16]
 HIGH_NTS    = 2048
 HIGH_NTRAJS = 512
 
-OUT = os.environ.get('ERNST_OUT', 'scaling/results/highN_only.json')
+OUT = os.environ.get('LINDBLAD_OUT', 'scaling/results/highN_only.json')
 
 
 def gpu_mem_mib():

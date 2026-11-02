@@ -9,10 +9,10 @@
 #SBATCH --output=logs/ppo_base_%A_%a.out
 #SBATCH --error=logs/ppo_base_%A_%a.out
 
-# Ernst-PPO baselines for amp damping, STIRAP, and diamond.
+# PPO baselines for amp damping, STIRAP, and diamond.
 # Best Phase-B configurations from Appendix `app:ppo` (per-system overrides).
-# All add the squared-fluence penalty λ_flu = 0.001 to Ernst's reward
-# (Ernst's linear pulse-area penalty w_A is set to 0).
+# All add the squared-fluence penalty λ_flu = 0.001 to the PPO reward
+# (the original linear pulse-area penalty w_A is set to 0).
 #
 #   task 0: AmpD γ=2          smoothness=0,     kernel_std=2, w_F=5
 #   task 1: STIRAP γ=5, T=2   smoothness=0.001, kernel_std=2, w_F=5

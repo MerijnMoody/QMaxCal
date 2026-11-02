@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generic Ernst-style PPO trainer. Takes a system module path and trains a
+Generic PPO trainer. Takes a system module path and trains a
 Gaussian policy that outputs piecewise-constant controls (smoothed + scaled)
 feeding a qiskit_dynamics Lindblad ODE solver.
 
@@ -18,7 +18,7 @@ import os, sys, pickle, argparse, importlib, time
 from functools import partial
 from typing import Any, Dict, Optional, Tuple
 
-# Both sys.paths required: Ernst/ for ppo + envs, template/ for systems/
+# Both sys.paths required: PPO/ for ppo + envs, template/ for systems/
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, THIS_DIR)
 
@@ -58,7 +58,7 @@ class EnvState:
 
 
 class SystemEnv(environment.Environment):
-    """Generic Ernst-style env that reads a system dict."""
+    """Generic PPO env that reads a system dict."""
 
     def __init__(self, system_mod_path: str, system_kwargs: dict,
                  n_action_steps: int = 50,

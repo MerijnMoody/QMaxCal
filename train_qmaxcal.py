@@ -139,6 +139,7 @@ def compute_loss(ctrl, sys_q, keys, tsave, n_time_steps,
                  kl_weight=0.0, drift_var_weight=0.0, fluence_weight=0.0,
                  fluence_max=0.0,
                  deriv1_weight=0.0, deriv2_weight=0.0,
+                 var_l_weight=0.0,
                  method='exp_split'):
     dt = sys_q['T_final'] / n_time_steps
     H_con = build_H_con(ctrl, sys_q['H_ops'], transform=sys_q.get('control_transform'))
@@ -173,6 +174,18 @@ def compute_loss(ctrl, sys_q, keys, tsave, n_time_steps,
     var_per_channel = alpha_sq_mean_k - alpha_mean_k ** 2                    # (n_trajs, n_jumps)
     drift_var_cost  = jnp.mean(jnp.sum(var_per_channel, axis=-1))
 
+    # LO-phase-invariant decoherence penalty:
+    #   VarL = Σ_k E_ψ[ ∫ (⟨L_k†L_k⟩ − |⟨L_k⟩|²) dt ]
+    # (invariant under L_k → L_k e^{iφ}; vanishes iff ψ is in the joint kernel)
+    psi = result.states.data[..., 0]                       # (n_trajs, n_times, dim)
+    var_l = 0.0
+    for _L in sys_q['jump_ops']:
+        Lpsi   = jnp.einsum('ij,btj->bti', _L.data, psi)
+        expLdL = jnp.sum(jnp.abs(Lpsi) ** 2, axis=-1)
+        expL   = jnp.einsum('bti,bti->bt', jnp.conj(psi), Lpsi)
+        var_l  = var_l + expLdL - jnp.abs(expL) ** 2
+    var_l_cost = jnp.mean(jnp.trapezoid(var_l, tsave, axis=-1))
+
     # Fluence ∫ |g|² dt — use physical (post-transform) controls
     tfm      = _get_transform(sys_q.get('control_transform'))
     t_sample = jnp.linspace(0, ctrl.T_final, 100)
@@ -199,11 +212,13 @@ def compute_loss(ctrl, sys_q, keys, tsave, n_time_steps,
          + drift_var_weight * drift_var_cost \
          + fluence_weight  * fluence_excess \
          + deriv1_weight   * deriv1_cost \
-         + deriv2_weight   * deriv2_cost
+         + deriv2_weight   * deriv2_cost \
+         + var_l_weight    * var_l_cost
     return loss, dict(fidelity=mean_fidelity, kl_cost=kl_cost,
                       drift_var_cost=drift_var_cost,
                       fluence=fluence, fluence_excess=fluence_excess,
                       deriv1_cost=deriv1_cost, deriv2_cost=deriv2_cost,
+                      var_l_cost=var_l_cost,
                       loss=loss)
 
 
@@ -232,6 +247,7 @@ def train(system_mod, system_kwargs, output_dir,
           fluence_warmup_steps=0, fluence_max=0.0,
           drift_var_warmup_steps=0,
           deriv1_weight=0.0, deriv2_weight=0.0, smooth_warmup_steps=0,
+          var_l_weight=0.0,
           seed=0, n_time_steps=256, n_trajs=128, num_steps=10000,
           lr=1e-3, n_modes=16, init_scale=1.0, snap_every=500,
           method='exp_split'):
@@ -240,6 +256,8 @@ def train(system_mod, system_kwargs, output_dir,
     sys_q       = _wrap_system(sysdict_raw)
 
     run_name = f"{sysdict_raw['system_name']}_kl{kl_weight}_dv{drift_var_weight}_fl{fluence_weight}_seed{seed}"
+    if var_l_weight > 0:
+        run_name = run_name.replace(f"_seed{seed}", f"_vl{var_l_weight}_seed{seed}")
     run_dir  = os.path.join(output_dir, run_name)
     os.makedirs(run_dir, exist_ok=True)
     print(f"Run: {run_name}")
@@ -264,6 +282,7 @@ def train(system_mod, system_kwargs, output_dir,
                             kl_weight=kl_weight, drift_var_weight=dv_w,
                             fluence_weight=fluence_w, fluence_max=fluence_max,
                             deriv1_weight=d1_w, deriv2_weight=d2_w,
+                            var_l_weight=var_l_weight,
                             method=method)
 
     @jax.jit
@@ -307,6 +326,8 @@ def train(system_mod, system_kwargs, output_dir,
             if deriv1_weight > 0 or deriv2_weight > 0:
                 extra = (f"  d1={float(metrics['deriv1_cost']):.4g}"
                          f"  d2={float(metrics['deriv2_cost']):.4g}")
+            if var_l_weight > 0:
+                extra += f"  VarL={float(metrics['var_l_cost']):.4f}"
             print(f"  step {step:5d}: F={float(metrics['fidelity']):.4f}  "
                   f"loss={loss_val:.4f}  (best_loss={best_train_loss:.4f}@{best_train_step})  "
                   f"KL={float(metrics['kl_cost']):.4f}  "
@@ -469,6 +490,9 @@ def main():
                    help='Weight on ∫|u\'\'(t)|² dt (Abdelhafez C5)')
     p.add_argument('--smooth_warmup_steps', type=int, default=0,
                    help='Apply derivative-smoothness penalties only after this many steps')
+    p.add_argument('--var_l_weight',     type=float, default=0.0,
+                   help='Weight on the LO-phase-invariant decoherence penalty '
+                        'Σ_k E[∫(⟨L†L⟩−|⟨L⟩|²)dt]')
     # training hyperparams
     p.add_argument('--n_time_steps',     type=int,   default=256)
     p.add_argument('--n_trajs',          type=int,   default=128)
@@ -487,6 +511,7 @@ def main():
                'fluence_weight', 'fluence_warmup_steps', 'fluence_max',
                'drift_var_warmup_steps',
                'deriv1_weight', 'deriv2_weight', 'smooth_warmup_steps',
+               'var_l_weight',
                'n_time_steps', 'n_trajs', 'num_steps', 'lr',
                'n_modes', 'init_scale', 'snap_every'}
     system_kwargs = {k: v for k, v in vars(args).items() if k not in generic}
@@ -500,6 +525,7 @@ def main():
         drift_var_warmup_steps=args.drift_var_warmup_steps,
         deriv1_weight=args.deriv1_weight, deriv2_weight=args.deriv2_weight,
         smooth_warmup_steps=args.smooth_warmup_steps,
+        var_l_weight=args.var_l_weight,
         seed=args.seed,
         n_time_steps=args.n_time_steps, n_trajs=args.n_trajs,
         num_steps=args.num_steps, lr=args.lr, n_modes=args.n_modes,

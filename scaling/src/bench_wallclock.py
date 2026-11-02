@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Axis-1: wall-clock vs N for Lindblad (Ernst/qiskit-dynamics) and SSE.
+"""Axis-1: wall-clock vs N for Lindblad (qiskit-dynamics) and SSE.
 
 For each N in the sweep:
   - Build the random chain
-  - Time one forward pass of the Lindblad master-equation solver (Ernst)
+  - Time one forward pass of the Lindblad master-equation solver
   - Time one forward pass of the SSE solver at multiple n_trajs values
   - Record trace distance to ground-truth Lindblad
 
@@ -20,7 +20,7 @@ import numpy as np
 import jax
 jax.config.update('jax_enable_x64', False)
 
-from common import (random_chain, random_fourier_coeffs, ernst_evolve,
+from common import (random_chain, random_fourier_coeffs, lindblad_evolve,
                      sse_evolve, trace_distance, time_after_warmup,
                      safe_eval)
 
@@ -60,20 +60,20 @@ def main():
         a, b = random_fourier_coeffs(sys_dict['n_controls'], n_modes=N_MODES,
                                       amplitude=PULSE_AMPLITUDE, seed=N * 17)
 
-        # ---- Ernst (Lindblad master equation) ----
-        rho_ernst = None
+        # ---- Lindblad master equation ----
+        rho_lindblad = None
         try:
-            def ernst_call():
-                return ernst_evolve(sys_dict, a, b, T_FINAL)
-            t_ernst, rho_ernst = time_after_warmup(ernst_call, n_warmup=2, n_runs=5)
-            print(f'  Ernst Dopri5 DM:                t = {t_ernst*1e3:9.1f} ms')
-            rows.append(dict(N=N, dim=sys_dict['dim'], method='ernst',
-                              n_trajs=None, t_ms=t_ernst * 1e3,
+            def lindblad_call():
+                return lindblad_evolve(sys_dict, a, b, T_FINAL)
+            t_lindblad, rho_lindblad = time_after_warmup(lindblad_call, n_warmup=2, n_runs=5)
+            print(f'  Lindblad Dopri5 DM:             t = {t_lindblad*1e3:9.1f} ms')
+            rows.append(dict(N=N, dim=sys_dict['dim'], method='lindblad',
+                              n_trajs=None, t_ms=t_lindblad * 1e3,
                               trace_dist=0.0, oom=False, error=None))
         except Exception as exc:
             msg = f'{type(exc).__name__}: {str(exc)[:200]}'
-            print(f'  Ernst Dopri5 DM:                FAILED  ({msg})')
-            rows.append(dict(N=N, dim=sys_dict['dim'], method='ernst',
+            print(f'  Lindblad Dopri5 DM:             FAILED  ({msg})')
+            rows.append(dict(N=N, dim=sys_dict['dim'], method='lindblad',
                               n_trajs=None, t_ms=float('nan'),
                               trace_dist=float('nan'), oom=True, error=msg))
 
@@ -84,9 +84,9 @@ def main():
                     return sse_evolve(sys_dict, a, b, T_FINAL,
                                        n_trajs=_n, n_time_steps=N_TIME_STEPS_SSE)
                 t_sse, rho_sse = time_after_warmup(sse_call, n_warmup=2, n_runs=5)
-                err = (trace_distance(rho_ernst, rho_sse)
-                        if rho_ernst is not None else float('nan'))
-                err_str = f'{err:.4f}' if rho_ernst is not None else '   --   '
+                err = (trace_distance(rho_lindblad, rho_sse)
+                        if rho_lindblad is not None else float('nan'))
+                err_str = f'{err:.4f}' if rho_lindblad is not None else '   --   '
                 print(f'  SSE n_trajs={n_trajs:>4}:               '
                       f't = {t_sse*1e3:9.1f} ms   trace_dist = {err_str}')
                 rows.append(dict(N=N, dim=sys_dict['dim'], method='sse',

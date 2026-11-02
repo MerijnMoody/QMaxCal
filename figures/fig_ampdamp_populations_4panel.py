@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Fig 1C — SSE-trajectory variance at γT=2 with 4 panels:
-baseline / Wiener-KL / DV / Ernst.
+baseline / Wiener-KL / DV / PPO.
 
 For QMaxCal (baseline, KL, DV=1): load FourierController, run SSE.
-For Ernst: load PPO params, compute deterministic u_stack via policy,
+For PPO: load PPO params, compute deterministic u_stack via policy,
 wrap as a tabulated controller, then run SSE on the same Lindblad SDE.
 """
 import os, sys, pickle
@@ -51,8 +51,8 @@ def load_qmaxcal_controller(path):
     return ctrl
 
 
-def load_ernst_u_stack(npz_path):
-    """Load pre-extracted Ernst u_stack from npz (avoids importing train_ppo
+def load_ppo_u_stack(npz_path):
+    """Load pre-extracted PPO u_stack from npz (avoids importing train_ppo
     which would force x64 on CPU and break dssesolve's complex64 path)."""
     d = np.load(npz_path)
     return d["ts"], d["u"]
@@ -107,7 +107,7 @@ def main():
     sysdict = sys_mod.create_system(gamma=2.0, T_final=1.0)
 
     BASE_QMC   = os.path.join(ROOT, "results", "ampdamp", "qmaxcal", "multiseed_g2.0")
-    BASE_ERNST = os.path.join(ROOT, "results", "ampdamp", "ppo")
+    BASE_PPO = os.path.join(ROOT, "results", "ampdamp", "ppo")
 
     PANELS = [
         ("Baseline ($\\lambda_{R_{\\mathrm{DV}}}{=}\\lambda_{\\mathrm{KL}_\\mathrm{W}}{=}0$)", "qmc",
@@ -116,8 +116,8 @@ def main():
          f"{BASE_QMC}/ampdamp_g2.0_T1.0_kl5.0_dv0.0_fl0.01_seed1/controller.pkl"),
         ("Drift variance ($\\lambda_{R_{\\mathrm{DV}}}{=}5$)", "qmc",
          f"{BASE_QMC}/ampdamp_g2.0_T1.0_kl0.0_dv5.0_fl0.01_seed1/controller.pkl"),
-        ("PPO",                    "ernst",
-         os.path.join(BASE_ERNST, "ernst_ampdamp_g2_seed1_ustack.npz")),
+        ("PPO",                    "ppo",
+         os.path.join(BASE_PPO, "ppo_ampdamp_g2_seed1_ustack.npz")),
     ]
 
     plt.rcParams.update({
@@ -133,7 +133,7 @@ def main():
         if kind == "qmc":
             ctrl = load_qmaxcal_controller(path)
         else:
-            ts_act, u_arr = load_ernst_u_stack(path)
+            ts_act, u_arr = load_ppo_u_stack(path)
             ctrl = TabulatedController(ts_act, u_arr)
         print(f"[{title}] sampling {N_TRAJS} SSE trajectories...")
         t, pop_traj = sample_populations(ctrl, sysdict)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """STIRAP populations side-by-side, same layout as fig1C amp damping.
-Columns: Baseline (kl=0) / Wiener-KL (kl=1) / Ernst-PPO. γ=5, T=2.
+Columns: Baseline (kl=0) / Wiener-KL (kl=1) / PPO. γ=5, T=2.
 """
 import os, sys, pickle
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -46,7 +46,7 @@ def load_qmc(path):
     return ctrl
 
 
-def load_ernst_npz(npz_path):
+def load_ppo_npz(npz_path):
     d = np.load(npz_path)
     return d["ts"], d["u"]
 
@@ -94,15 +94,15 @@ def main():
     sysdict = sys_mod.create_system(gamma=5.0, T_final=2.0)
 
     BASE_QMC   = os.path.join(ROOT, "results", "stirap", "qmaxcal", "n64")
-    BASE_ERNST = os.path.join(ROOT, "results", "stirap", "ppo")
+    BASE_PPO = os.path.join(ROOT, "results", "stirap", "ppo")
 
     PANELS = [
         ("Baseline ($\\lambda_{R_{\\mathrm{DV}}}{=}\\lambda_{\\mathrm{KL}_\\mathrm{W}}{=}0$)",   "qmc",
          f"{BASE_QMC}/stirap3_g5.0_T2.0_kl0.0_dv0.0_fl0.0_seed1/controller.pkl"),
         ("Wiener KL ($\\lambda_{\\mathrm{KL}_\\mathrm{W}}{=}1$)",  "qmc",
          f"{BASE_QMC}/stirap3_g5.0_T2.0_kl1.0_dv0.0_fl0.0_seed1/controller.pkl"),
-        ("PPO",                 "ernst",
-         os.path.join(BASE_ERNST, "ernst_stirap_flu0_g5_seed0_ustack.npz")),
+        ("PPO",                 "ppo",
+         os.path.join(BASE_PPO, "ppo_stirap_flu0_g5_seed0_ustack.npz")),
     ]
 
     plt.rcParams.update({
@@ -118,7 +118,7 @@ def main():
         if kind == "qmc":
             ctrl = load_qmc(path)
         else:
-            ts_act, u_arr = load_ernst_npz(path)
+            ts_act, u_arr = load_ppo_npz(path)
             ctrl = TabulatedController(ts_act, u_arr)
         print(f"[{title}] sampling {N_TRAJS} SSE trajectories...")
         t, pop_traj = sample_populations(ctrl, sysdict)

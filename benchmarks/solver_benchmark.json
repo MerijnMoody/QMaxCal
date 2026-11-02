@@ -2,7 +2,7 @@
   {
     "N": 2,
     "dim": 4,
-    "method": "ernst",
+    "method": "lindblad",
     "n_trajs": null,
     "t_ms": 6609.303809993435,
     "trace_dist": 0.0
@@ -34,7 +34,7 @@
   {
     "N": 3,
     "dim": 8,
-    "method": "ernst",
+    "method": "lindblad",
     "n_trajs": null,
     "t_ms": 5723.219375999179,
     "trace_dist": 0.0
@@ -66,7 +66,7 @@
   {
     "N": 4,
     "dim": 16,
-    "method": "ernst",
+    "method": "lindblad",
     "n_trajs": null,
     "t_ms": 5070.809886994539,
     "trace_dist": 0.0
@@ -98,7 +98,7 @@
   {
     "N": 5,
     "dim": 32,
-    "method": "ernst",
+    "method": "lindblad",
     "n_trajs": null,
     "t_ms": 4526.080658004503,
     "trace_dist": 0.0
@@ -130,7 +130,7 @@
   {
     "N": 6,
     "dim": 64,
-    "method": "ernst",
+    "method": "lindblad",
     "n_trajs": null,
     "t_ms": 4033.124962996226,
     "trace_dist": 0.0

@@ -11,13 +11,13 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-# Reuse the chain construction + Fourier-pulse + Ernst/SSE wrappers
+# Reuse the chain construction + Fourier-pulse + Lindblad/SSE wrappers
 # already validated in benchmarks/solver_benchmark.py.
 from benchmarks.solver_benchmark import (   # noqa: E402
     random_chain,
     random_fourier_coeffs,
     make_H_con_fourier,
-    ernst_evolve,
+    lindblad_evolve,
     sse_evolve,
     trace_distance,
     time_after_warmup,

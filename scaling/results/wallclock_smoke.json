@@ -2,7 +2,7 @@
   {
     "N": 4,
     "dim": 16,
-    "method": "ernst",
+    "method": "lindblad",
     "n_trajs": null,
     "t_ms": 4914.200516010169,
     "trace_dist": 0.0,
@@ -32,7 +32,7 @@
   {
     "N": 6,
     "dim": 64,
-    "method": "ernst",
+    "method": "lindblad",
     "n_trajs": null,
     "t_ms": 4182.220251997933,
     "trace_dist": 0.0,

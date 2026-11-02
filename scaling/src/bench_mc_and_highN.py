@@ -8,7 +8,7 @@
 
 2. HIGH-N SSE SMOKE at N=12, 14, 16. One SSE forward pass each at
    nts=2048, n_trajs=512.  Records compile time, call time, peak GPU
-   memory.  No Lindblad comparison (Ernst OOMs at N>=12 on a 40 GB A100).
+   memory.  No Lindblad comparison (the Lindblad solver OOMs at N>=12 on a 40 GB A100).
 
 Writes scaling/results/mc_and_highN.json.
 """
@@ -19,7 +19,7 @@ import numpy as np
 import jax
 jax.config.update('jax_enable_x64', False)  # x32 throughout
 
-from common import (random_chain, random_fourier_coeffs, ernst_evolve,
+from common import (random_chain, random_fourier_coeffs, lindblad_evolve,
                      rho_estimator, frobenius_distance)
 
 T_FINAL = 1.0
@@ -54,7 +54,7 @@ def main():
                                   amplitude=PULSE_AMPLITUDE, seed=N * 17)
 
     t0 = time.perf_counter()
-    rho_truth = ernst_evolve(sys_dict, a, b, T_FINAL)
+    rho_truth = lindblad_evolve(sys_dict, a, b, T_FINAL)
     t_truth = time.perf_counter() - t0
     print(f'  Lindblad ground truth: t={t_truth:.1f}s')
 

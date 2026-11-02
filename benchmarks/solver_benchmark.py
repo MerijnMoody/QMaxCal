@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Solver-comparison benchmark: Ernst's density-matrix solver vs. our SSE
+Solver-comparison benchmark: the density-matrix (Lindblad) solver vs. our SSE
 sampling solver.
 
 For each N in a small sweep:
@@ -15,7 +15,7 @@ Wall-clock timing excludes the first call (JIT compile).  We pre-compile
 each forward pass with a warmup invocation, then median-time n_runs
 subsequent invocations.
 
-Ernst's solver = qiskit-dynamics Dopri5 on the full density matrix.
+The Lindblad solver = qiskit-dynamics Dopri5 on the full density matrix.
 Our solver    = ExponentialSplit on n_trajs SSE samples; the SSE-mean
                 |psi><psi| is the rho estimate.
 """
@@ -126,7 +126,7 @@ def make_pulse_fn(a_k, b_k, T):
     return f
 
 
-def ernst_evolve(sys, a, b, T, rtol=1e-8, atol=1e-10):
+def lindblad_evolve(sys, a, b, T, rtol=1e-8, atol=1e-10):
     """Build a fresh qiskit-dynamics Solver and evolve to T using closed-form
     Fourier signals.  Returns final density matrix (numpy)."""
     H_ops = [jnp.asarray(H) for H in sys['H_ops']]
@@ -229,14 +229,14 @@ def main(out_path='<repo-root>/experiments/template/benchmarks/solver_benchmark.
     N_TRAJS_LIST = [64, 256]  # 1024 already shown to converge; skip to save time
     N_LIST = [4, 6, 8, 10, 12]
     # With --mem=64G host RAM, host OOM is no longer the binding constraint;
-    # the binding constraint is the 40 GB A100 GPU memory.  Ernst's density
+    # the binding constraint is the 40 GB A100 GPU memory.  The Lindblad solver's density
     # matrix is 4^N x 4^N x 16 bytes plus 6 Dopri5 stage buffers plus dense
     # Lindblad/Hamiltonian operators (~24 of them at 4^N x 16 bytes each).
     # Estimated GPU footprint per N:
     #     N=10:  ~ 0.7 GB     N=12:  ~ 9 GB     N=13:  ~ 30 GB     N=14: > 40 GB
-    # We try Ernst at every N below; if it OOMs we'll see it and can bump
+    # We try the Lindblad solver at every N below; if it OOMs we'll see it and can bump
     # this cutoff after the run.
-    ERNST_MAX_N = 12
+    LINDBLAD_MAX_N = 12
 
     rows = []
     for N in N_LIST:
@@ -245,20 +245,20 @@ def main(out_path='<repo-root>/experiments/template/benchmarks/solver_benchmark.
         a, b = random_fourier_coeffs(sys_dict['n_controls'], n_modes=N_MODES,
                                       amplitude=PULSE_AMPLITUDE, seed=N * 17)
 
-        # ---- Ernst (ground truth) -- only at small N, OOMs at N>=10 ----
-        rho_ernst = None
-        if N <= ERNST_MAX_N:
-            def ernst_call():
-                return ernst_evolve(sys_dict, a, b, T_FINAL)
-            t_ernst, rho_ernst = time_after_warmup(ernst_call, n_warmup=2, n_runs=5)
-            print(f'  Ernst (Dopri5 DM, rtol=1e-8):   t = {t_ernst*1e3:7.1f} ms')
-            rows.append(dict(N=N, dim=sys_dict['dim'], method='ernst',
-                              n_trajs=None, t_ms=t_ernst * 1e3,
+        # ---- Lindblad (ground truth) -- only at small N, OOMs at N>=10 ----
+        rho_lindblad = None
+        if N <= LINDBLAD_MAX_N:
+            def lindblad_call():
+                return lindblad_evolve(sys_dict, a, b, T_FINAL)
+            t_lindblad, rho_lindblad = time_after_warmup(lindblad_call, n_warmup=2, n_runs=5)
+            print(f'  Lindblad (Dopri5 DM, rtol=1e-8): t = {t_lindblad*1e3:7.1f} ms')
+            rows.append(dict(N=N, dim=sys_dict['dim'], method='lindblad',
+                              n_trajs=None, t_ms=t_lindblad * 1e3,
                               trace_dist=0.0))
         else:
-            print(f'  Ernst (Dopri5 DM):              SKIPPED  '
-                  f'(OOMs at N>={ERNST_MAX_N+1} with 16 GB allocation)')
-            rows.append(dict(N=N, dim=sys_dict['dim'], method='ernst',
+            print(f'  Lindblad (Dopri5 DM):           SKIPPED  '
+                  f'(OOMs at N>={LINDBLAD_MAX_N+1} with 16 GB allocation)')
+            rows.append(dict(N=N, dim=sys_dict['dim'], method='lindblad',
                               n_trajs=None, t_ms=float('nan'),
                               trace_dist=float('nan'),
                               note='SKIPPED: OOM at 16 GB'))
@@ -269,9 +269,9 @@ def main(out_path='<repo-root>/experiments/template/benchmarks/solver_benchmark.
                 return sse_evolve(sys_dict, a, b, T_FINAL,
                                     n_trajs=_n, n_time_steps=N_TIME_STEPS_SSE)
             t_sse, rho_sse = time_after_warmup(sse_call, n_warmup=2, n_runs=5)
-            err = (trace_distance(rho_ernst, rho_sse)
-                    if rho_ernst is not None else float('nan'))
-            err_str = f'{err:.4f}' if rho_ernst is not None else '   --   '
+            err = (trace_distance(rho_lindblad, rho_sse)
+                    if rho_lindblad is not None else float('nan'))
+            err_str = f'{err:.4f}' if rho_lindblad is not None else '   --   '
             print(f'  SSE n_trajs={n_trajs:>4}  (dt={T_FINAL/N_TIME_STEPS_SSE:.4g}):'
                   f'  t = {t_sse*1e3:7.1f} ms   trace_dist = {err_str}')
             rows.append(dict(N=N, dim=sys_dict['dim'], method='sse',

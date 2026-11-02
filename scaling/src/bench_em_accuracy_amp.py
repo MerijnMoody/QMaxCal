@@ -20,7 +20,7 @@ import numpy as np
 import jax
 jax.config.update('jax_enable_x64', False)
 
-from common import (random_chain, random_fourier_coeffs, ernst_evolve,
+from common import (random_chain, random_fourier_coeffs, lindblad_evolve,
                      rho_estimator, frobenius_distance)
 
 T_FINAL = 1.0
@@ -65,7 +65,7 @@ def main():
         # Lindblad ground truth (one per amplitude)
         try:
             t0 = time.perf_counter()
-            rho_truth = ernst_evolve(sys_dict, a, b, T_FINAL)
+            rho_truth = lindblad_evolve(sys_dict, a, b, T_FINAL)
             t_truth = time.perf_counter() - t0
             print(f'  Lindblad ground truth: {t_truth:.1f}s')
         except Exception as exc:

@@ -41,7 +41,7 @@ def load_qmc(path):
     return ctrl
 
 
-def load_ernst_npz(npz_path):
+def load_ppo_npz(npz_path):
     d = np.load(npz_path); return d["ts"], d["u"]
 
 
@@ -82,7 +82,7 @@ def sample_alpha2(ctrl, sysdict, n_trajs=N_TRAJS, n_time_steps=N_TIME_STEPS, see
 def main():
     sysdict = sys_mod.create_system(gamma=2.0, T_final=1.0)
     BASE_QMC   = os.path.join(ROOT, "results", "ampdamp", "qmaxcal", "multiseed_g2.0")
-    BASE_ERNST = os.path.join(ROOT, "results", "ampdamp", "ppo")
+    BASE_PPO = os.path.join(ROOT, "results", "ampdamp", "ppo")
 
     METHODS = [
         ("Baseline ($\\lambda_{\\mathrm{KL}_\\mathrm{W}}{=}\\lambda_{R_{\\mathrm{DV}}}{=}0$)",
@@ -94,8 +94,8 @@ def main():
         ("Drift variance ($\\lambda_{R_{\\mathrm{DV}}}{=}5$)",
          "qmc", f"{BASE_QMC}/ampdamp_g2.0_T1.0_kl0.0_dv5.0_fl0.01_seed1/controller.pkl",
          "darkorange", "-"),
-        ("PPO", "ernst",
-         os.path.join(BASE_ERNST, "ernst_ampdamp_g2_seed1_ustack.npz"),
+        ("PPO", "ppo",
+         os.path.join(BASE_PPO, "ppo_ampdamp_g2_seed1_ustack.npz"),
          "crimson", "--"),
     ]
 
@@ -113,7 +113,7 @@ def main():
     summaries = []
     for label, kind, path, color, ls in METHODS:
         ctrl = load_qmc(path) if kind == "qmc" else (
-            (lambda ts, u: TabulatedController(ts, u))(*load_ernst_npz(path)))
+            (lambda ts, u: TabulatedController(ts, u))(*load_ppo_npz(path)))
         print(f"[{label}] sampling...")
         t, a2 = sample_alpha2(ctrl, sysdict)
         ax.plot(t, a2, color=color, lw=2.0, ls=ls, label=label)

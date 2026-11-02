@@ -8,17 +8,19 @@ experiments and figures of the QMaxCal paper.
 ```
 qmaxcal_paper/
 ├── core/                              SSE / Lindblad solver
-├── Ernst/rl_working/                  PPO + RL environment helpers (Ernst 2025 codebase)
+├── PPO/rl_working/                  PPO baseline + RL environment helpers
 ├── systems/                           Per-experiment Hamiltonians + jump ops
 │   ├── amplitude_damping.py           Single-qubit T1 relaxation (Section 3)
 │   ├── stirap_3level.py               STIRAP 3-level Λ system (Section 4)
 │   ├── dark_route_v3.py               Diamond / dark-route 4-level system (Section 4)
 │   ├── spin_chain_4.py                4-qubit chain with edge-noise asymmetry (Section 4)
-│   └── spin_chain_6_kingston_q14_q9.py 6-qubit IBM Kingston q14→q9 chain (Section 4)
+│   ├── spin_chain_6_kingston_q14_q9.py 6-qubit IBM Kingston q14→q9 chain (Section 4)
+│   ├── single_qubit_ampdamp.py        Amplitude damping with tunable LO phase φ (appendix)
+│   └── single_qubit_dephasing.py      Single-qubit pure dephasing (appendix)
 ├── train_qmaxcal.py                   QMaxCal training (Fourier controller, SSE loss;
 │                                      supports KL_W, drift-variance, fluence,
 │                                      and Abdelhafez C4/C5 derivative penalties)
-├── train_ppo.py                       PPO baseline (uses Ernst/rl_working/)
+├── train_ppo.py                       PPO baseline (uses PPO/rl_working/)
 ├── figures/                           Paper figure scripts + .png outputs
 │   ├── fig_ampdamp_populations_4panel.py  Section 3 amp-damping populations (4 panels)
 │   ├── fig_ampdamp_alpha2_log.py          Wiener-KL integrand on log axis
@@ -27,7 +29,7 @@ qmaxcal_paper/
 │   ├── fig_diamond_3panel_robust.py       Section 4 diamond + γ-robustness
 │   ├── fig_2dv_3rho_seeds.py              Section 4 chain-4 ρ-sweep figure
 │   ├── fig_chain6_q14_q9_4policies.py     Section 4 IBM Kingston chain
-│   └── extract_ernst_u_stack.py           Helper: extract det. action sequence from PPO params
+│   └── extract_ppo_u_stack.py           Helper: extract det. action sequence from PPO params
 ├── scaling/                           SSE scaling experiment (Section 5)
 │   ├── DESIGN.md
 │   ├── src/                           bench_*.py
@@ -71,7 +73,7 @@ sbatch run_plot_ch6_q14q9_4pol.sh                  # → figures/fig_chain6_q14_
 
 ## Reproducing the data
 
-QMaxCal training (no Ernst dependency):
+QMaxCal training (no PPO dependency):
 ```bash
 # Section 3 — amp damping multi-seed (5 γT × 2 KL × 2 seeds = 20 tasks)
 sbatch run_ampdamp_multiseed.sh
@@ -93,7 +95,7 @@ sbatch results/chain6/qmaxcal/variance_q14_q9_flw0.02/run_kl0p1.sh
 sbatch results/chain6/qmaxcal/variance_q14_q9_flw0.02/run_kl0p1_seeds.sh
 ```
 
-PPO training (Ernst/rl_working/ bundled in this repo):
+PPO training (PPO/rl_working/ bundled in this repo):
 ```bash
 # Phase-B winners for amp damping, STIRAP, and diamond
 sbatch run_ppo_baselines.sh
@@ -106,13 +108,48 @@ sbatch run_ch6q149_ppo_sweep.sh
 sbatch run_ch6q149_ppo_best_seeds.sh
 ```
 
+## Additional experiments (appendix)
+
+LO-phase dependence of the Wiener KL on the amplitude-damped qubit. The
+jump operator is L = √γ e^{iφ} σ₋ with σ₋ = |0⟩⟨1|, so the monitored
+quadrature is e^{iφ}σ₋ + e^{−iφ}σ₊ = cos φ σx − sin φ σy. Results go to
+`results/ampdamp/qmaxcal/lo_phase/`.
+```bash
+sbatch run_qubit1_ampdamp_phase_kl5_g2.sh     # γT=2, λ_KLW=5, φ ∈ {0, π/4, π/2}
+sbatch run_qubit1_ampdamp_phase_kl1_g2.sh     # γT=2, λ_KLW=1, seed 0
+sbatch run_qubit1_ampdamp_kl1_g2_seeds.sh     # γT=2, λ_KLW=1, seeds 1, 2
+sbatch run_qubit1_ampdamp_noreg_hinoise.sh    # unregularized, γT ∈ {0.5, 2}
+sbatch run_qubit1_ampdamp_kl_sweep_pi4.sh     # γT=2, φ=π/4, λ_KLW ∈ {0.5, 2}
+sbatch run_qubit1_ampdamp_phase.sh            # γT=0.1, λ_KLW=1, φ ∈ {π/4, π/2}
+sbatch run_qubit1_ampdamp_phi0.sh             # γT=0.1, λ_KLW=1, φ=0
+sbatch run_qubit1_ampdamp_phi0_noreg.sh       # γT=0.1, unregularized
+sbatch run_qubit1_ampdamp_phase_dv.sh         # γT=0.5, R_DV=1, three phases
+sbatch run_qubit1_ampdamp_phase_dv_g2.sh      # γT=2,   R_DV=1, three phases
+sbatch run_qubit1_ampdamp_phase_kl_hinoise.sh # γT ∈ {0.5, 2}, λ_KLW=1, three phases
+```
+Each run directory holds `controller.pkl` (best exact-Lindblad snapshot) and
+`controller_best_by_loss.pkl` (lowest training loss; used for the LO-phase table).
+
+Regularizer comparisons (KL_W, R_DV and the LO-phase-invariant Var(L)
+penalty, `--var_l_weight` in `train_qmaxcal.py`):
+```bash
+sbatch run_qubit1_dephasing_3reg.sh           # single-qubit dephasing → results/dephasing/qmaxcal/pure_dephasing/
+sbatch run_qubit1_dephasing_hiweight.sh       # same, 10x weights
+sbatch run_chain4_dephasing_3reg.sh           # chain-4 endpoint noise → results/chain4/qmaxcal/endnoise_r4/
+sbatch run_chain6_kingston_varl.sh            # chain-6 Var(L) penalty → results/chain6/qmaxcal/variance_q14_q9_flw0.02/
+sbatch run_chain6_kingston_fluence_front.sh   # chain-6 fluence-only front → results/chain6/qmaxcal/kingston_q14_q9_linflu/
+sbatch run_chain6_kingston_q14_q9_linflu_flw0.sh  # chain-6 linear fluence, weight 0
+```
+Summary plots: `figures/qubit1_ampdamp_phase*.png`, `figures/qubit1_dephasing_3reg.png`,
+`figures/chain4_dephasing_3reg.png`, `figures/chain6_fluence_front_ablation.png`.
+
 ## Scaling experiment
 
 See `scaling/DESIGN.md`. Key benchmarks:
 
 ```bash
 sbatch scaling/scripts/run_em_scaling.sh   # EM vs ExpSplit per-step wall-clock vs N
-sbatch scaling/scripts/run_ernst_only.sh   # Ernst Lindblad OOM scan
+sbatch scaling/scripts/run_lindblad_only.sh  # Lindblad solver OOM scan
 ```
 
 Results land in `scaling/results/*.json`; plots can be added on top.
@@ -121,8 +158,11 @@ Results land in `scaling/results/*.json`; plots can be added on top.
 
 - `jax`, `flax`, `optax`, `dynamiqs`, `numpy`, `matplotlib`, `pickle` — for QMaxCal.
 - `qiskit-dynamics`, `diffrax` — for the Lindblad reference solver in `scaling/`.
-- For PPO retraining only: `gymnax`, `chex` (the Ernst RL codebase
-  is included under `Ernst/rl_working/`).
+- For PPO retraining only: `gymnax`, `chex` (the PPO RL codebase
+  is included under `PPO/rl_working/`).
+
+The PPO baseline code in `PPO/rl_working/` is adapted from the RL codebase of
+Ernst et al. (2025).
 
 A python venv at `~/qmaxcal_venv/` is assumed by the SLURM scripts;
 adapt the `PYTHON=` lines to your local interpreter.

@@ -25,7 +25,7 @@ fixed amplitude). $T_\text{final}=1.0$ (dimensionless).
 ## Sweep ranges
 
 - **N**: $\{4, 6, 8, 10, 12\}$ for both solvers; $\{14\}$ SSE-only
-  (Ernst expected to OOM around $N{\approx}13$ on a 40 GB A100).
+  (the Lindblad solver is expected to OOM around $N{\approx}13$ on a 40 GB A100).
 - **n_trajs (axis 1, axis 2)**: $\{16, 32, 64, 128, 256, 512, 1024\}$.
 - **Reseeds (axis 2)**: 50 RNG seeds per (N, n_trajs) cell.
 - **Repeats for wall-clock (axis 1)**: 5 timed reps after 2 JIT warmups, report median.
@@ -46,7 +46,7 @@ fixed amplitude). $T_\text{final}=1.0$ (dimensionless).
 ## Risks (to address openly in the paper)
 
 1. **n_trajs needed for stable gradients may be large**: if $\sigma_F$ at $n_\text{trajs}=64$ is large enough that we need $n_\text{trajs}=256$+, the SSE crossover moves to $N\geq 9$. Honest framing: *"the trajectory advantage materialises for $N \geq X$".*
-2. **Lindblad memory ceiling**: Ernst stores $4^N$-element density matrix and several Dopri5 stage buffers. We expect OOM near $N{=}13$ on 40 GB A100, more aggressively if `qiskit-dynamics` doesn't free intermediates.
+2. **Lindblad memory ceiling**: the Lindblad solver stores $4^N$-element density matrix and several Dopri5 stage buffers. We expect OOM near $N{=}13$ on 40 GB A100, more aggressively if `qiskit-dynamics` doesn't free intermediates.
 3. **Different time-discretisation**: SSE uses fixed $dt$, Lindblad uses adaptive Dopri5. Both are well-converged at the chosen tolerances, but a reviewer might ask. We control for this by checking `trace_dist` is at the per-trajectory sampling-noise floor across all $N$.
 
 ## Dev plan
